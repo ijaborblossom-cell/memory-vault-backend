@@ -1,0 +1,182 @@
+{
+  "version": "1.1.0",
+  "updatedAt": "2026-02-21",
+  "entries": [
+    {
+      "id": "overview",
+      "topic": "What is Memory Vault?",
+      "keywords": ["memory vault", "overview", "app", "purpose"],
+      "answer": "Memory Vault is a web application for preserving and organizing memories across four vaults: personal, learning, cultural, and future. It includes an AI assistant for Memory Vault questions and memory-based help.",
+      "sources": ["README.md", ".vscode/index.html", "server.js"]
+    },
+    {
+      "id": "who-can-use",
+      "topic": "Who can use Memory Vault",
+      "keywords": ["account", "user", "signup", "signin", "login", "access"],
+      "answer": "Any user with an account can sign in and use Memory Vault features, including memory management and AI assistant chat.",
+      "sources": ["server.js", ".vscode/index.html"]
+    },
+    {
+      "id": "new-user-onboarding",
+      "topic": "New user onboarding",
+      "keywords": ["new user", "first time", "getting started", "start", "begin", "onboarding"],
+      "answer": "For new users: sign in, choose a vault type, create your first memory (title + content), mark important entries when needed, then use AI Assistant for summaries and organization help.",
+      "sources": ["README.md", ".vscode/index.html", ".vscode/script.js", "server.js"]
+    },
+    {
+      "id": "first-actions",
+      "topic": "Best first actions in Memory Vault",
+      "keywords": ["first steps", "what should i do first", "how to use memory vault", "starter guide"],
+      "answer": "Best first actions are: create one memory in your main vault, add one important memory, then ask AI Assistant to summarize or categorize your entries.",
+      "sources": [".vscode/index.html", ".vscode/script.js", "server.js"]
+    },
+    {
+      "id": "vault-types",
+      "topic": "Vault categories",
+      "keywords": ["vault", "types", "personal", "learning", "cultural", "future", "categories"],
+      "answer": "The vault categories are Personal Life Vault, Knowledge and Education, Cultural Heritage, and Future Wisdom.",
+      "sources": [".vscode/index.html", ".vscode/script.js"]
+    },
+    {
+      "id": "personal-vault",
+      "topic": "Personal vault behavior",
+      "keywords": ["personal vault", "private", "diary", "pin", "unlock", "sanctuary"],
+      "answer": "Personal Life Vault is treated as a private diary with PIN unlock flow in the frontend experience.",
+      "sources": [".vscode/index.html", ".vscode/script.js"]
+    },
+    {
+      "id": "create-memory",
+      "topic": "How to create a memory",
+      "keywords": ["create memory", "add memory", "new entry", "write memory", "form"],
+      "answer": "To add a memory, choose a vault, open the add-memory form, enter title and content, optionally mark it important, then save.",
+      "sources": [".vscode/index.html", ".vscode/script.js", "server.js"]
+    },
+    {
+      "id": "update-memory",
+      "topic": "How memory updates work",
+      "keywords": ["edit memory", "update memory", "patch", "favorite", "isfavorite"],
+      "answer": "Memory updates are supported through PATCH /api/memories/:id, including title, content, vault_type, is_important, and favorite state.",
+      "sources": ["server.js", ".vscode/script.js"]
+    },
+    {
+      "id": "delete-memory",
+      "topic": "How to delete a memory",
+      "keywords": ["delete memory", "remove memory", "trash", "api delete"],
+      "answer": "Memory deletion is supported by DELETE /api/memories/:id and is scoped to the signed-in user.",
+      "sources": ["server.js", ".vscode/script.js"]
+    },
+    {
+      "id": "memory-fields",
+      "topic": "Memory schema",
+      "keywords": ["memory fields", "title", "content", "vault_type", "is_important", "timestamp", "user_email"],
+      "answer": "A memory record includes id, title, content, vault_type, is_important, timestamp, and user_email. Favorite state is also supported.",
+      "sources": ["server.js", ".vscode/script.js"]
+    },
+    {
+      "id": "auth",
+      "topic": "Authentication and security",
+      "keywords": ["auth", "signin", "signup", "jwt", "password", "bcrypt", "token"],
+      "answer": "Memory Vault uses JWT-based authentication. Passwords are hashed with bcrypt, and protected endpoints require a valid bearer token.",
+      "sources": ["server.js", "README.md"]
+    },
+    {
+      "id": "token-expiry",
+      "topic": "Token lifetime",
+      "keywords": ["token expiry", "jwt expiry", "7d", "session"],
+      "answer": "JWT tokens are issued with a 7-day expiration window.",
+      "sources": ["server.js"]
+    },
+    {
+      "id": "ai-endpoint",
+      "topic": "AI assistant endpoint",
+      "keywords": ["ai chat", "assistant", "openai", "api ai", "chat endpoint"],
+      "answer": "The AI assistant endpoint is POST /api/ai/chat. It uses user memory context plus curated Memory Vault knowledge to answer related questions.",
+      "sources": ["server.js"]
+    },
+    {
+      "id": "ai-scope",
+      "topic": "AI scope policy",
+      "keywords": ["scope", "out of scope", "unrelated question", "policy", "memory vault only"],
+      "answer": "The assistant is restricted to Memory Vault-related questions. Unrelated questions are refused with a prompt to ask about Memory Vault.",
+      "sources": ["server.js"]
+    },
+    {
+      "id": "search",
+      "topic": "Search and filtering",
+      "keywords": ["search", "filter", "find", "query", "search input"],
+      "answer": "The frontend has memory search that filters by title, content, and vault type.",
+      "sources": [".vscode/index.html", ".vscode/script.js"]
+    },
+    {
+      "id": "favorites",
+      "topic": "Favorites feature",
+      "keywords": ["favorite", "favorites", "star", "bookmark"],
+      "answer": "Users can star memories as favorites and view them in a dedicated favorites list in the UI.",
+      "sources": [".vscode/index.html", ".vscode/script.js"]
+    },
+    {
+      "id": "stats",
+      "topic": "Dashboard statistics",
+      "keywords": ["stats", "statistics", "today", "week", "month", "counts"],
+      "answer": "The frontend computes summary statistics from memories, including time-based totals and vault-based counts.",
+      "sources": [".vscode/index.html", ".vscode/script.js"]
+    },
+    {
+      "id": "trending",
+      "topic": "Trending memories",
+      "keywords": ["trending", "important memories", "highlights"],
+      "answer": "The app displays a trending section that prioritizes important non-personal memories.",
+      "sources": [".vscode/index.html", ".vscode/script.js"]
+    },
+    {
+      "id": "storage",
+      "topic": "Data storage model",
+      "keywords": ["users.json", "file storage", "database", "local json", "persistence"],
+      "answer": "Backend persistence currently uses a local JSON file named users.json with user-isolated memory collections.",
+      "sources": ["server.js", "README.md"]
+    },
+    {
+      "id": "frontend-backend-link",
+      "topic": "Frontend and backend connection",
+      "keywords": ["frontend connected", "backend connected", "localhost", "port 3000", "api base"],
+      "answer": "The frontend calls the backend at http://localhost:3000/api and is served from the same Express server root.",
+      "sources": [".vscode/script.js", "server.js"]
+    },
+    {
+      "id": "sync-fallback",
+      "topic": "Offline fallback and retry",
+      "keywords": ["offline", "retry", "queue", "reconnect", "fallback", "localstorage"],
+      "answer": "When backend connectivity fails, the frontend can queue requests, retry later, and use localStorage fallback behavior.",
+      "sources": [".vscode/script.js", "CONNECTION_STATUS.md"]
+    },
+    {
+      "id": "migration",
+      "topic": "Local to backend sync",
+      "keywords": ["migration", "import", "sync local memories", "duplicate guard"],
+      "answer": "On login, local memories can be synchronized to backend while attempting to avoid duplicates using signature matching.",
+      "sources": [".vscode/script.js"]
+    },
+    {
+      "id": "export",
+      "topic": "Export support",
+      "keywords": ["export", "csv", "text", "download", "backup"],
+      "answer": "The frontend includes export formatting for memory data, including CSV and plain-text output formats.",
+      "sources": [".vscode/script.js"]
+    },
+    {
+      "id": "health-debug",
+      "topic": "Health and debug endpoints",
+      "keywords": ["health endpoint", "debug endpoint", "server status", "config"],
+      "answer": "Server diagnostics include GET /api/health and GET /api/debug/config to inspect runtime status and AI configuration.",
+      "sources": ["server.js"]
+    },
+    {
+      "id": "limits",
+      "topic": "Current limitations",
+      "keywords": ["limitations", "not supported", "image upload", "scaling", "production database"],
+      "answer": "Current implementation is file-based and local-first. It does not yet include image uploads or production-scale database architecture.",
+      "sources": ["README.md", "server.js"]
+    }
+  ]
+}
+

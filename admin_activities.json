@@ -1,0 +1,1086 @@
+{
+  "activities": [
+    {
+      "id": "1771700589570_pjzb5l",
+      "timestamp": "2026-02-21T19:03:09.570Z",
+      "action": "memory_create",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "POST",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "vault_type": "learning",
+        "is_important": false
+      }
+    },
+    {
+      "id": "1771700599073_ug2qmi",
+      "timestamp": "2026-02-21T19:03:19.073Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 1,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771700633251_p1q821",
+      "timestamp": "2026-02-21T19:03:53.251Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 1,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771700639681_kyrgno",
+      "timestamp": "2026-02-21T19:03:59.681Z",
+      "action": "personal_pin_lock",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "POST",
+      "path": "/api/personal/pin/lock",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771700644570_dx2ihd",
+      "timestamp": "2026-02-21T19:04:04.570Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771700644803_cia3bo",
+      "timestamp": "2026-02-21T19:04:04.803Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 1,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771700652953_hprr3q",
+      "timestamp": "2026-02-21T19:04:12.953Z",
+      "action": "memory_delete",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "DELETE",
+      "path": "/api/memories/1771700589567",
+      "ip": "::1",
+      "details": {
+        "id": "1771700589567",
+        "vault_type": "learning"
+      }
+    },
+    {
+      "id": "1771706242250_x274i9",
+      "timestamp": "2026-02-21T20:37:22.250Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771706554950_4glpgq",
+      "timestamp": "2026-02-21T20:42:34.950Z",
+      "action": "auth_signup",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signup",
+      "ip": "::1",
+      "details": {
+        "createdUserEmail": "delcheck_36244426@example.com"
+      }
+    },
+    {
+      "id": "1771706555036_rxculj",
+      "timestamp": "2026-02-21T20:42:35.036Z",
+      "action": "auth_signup",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signup",
+      "ip": "::1",
+      "details": {
+        "createdUserEmail": "delpersonal_169517529@example.com"
+      }
+    },
+    {
+      "id": "1771706555088_hklb09",
+      "timestamp": "2026-02-21T20:42:35.088Z",
+      "action": "memory_create",
+      "email": "delcheck_36244426@example.com",
+      "userId": "1771706554938",
+      "method": "POST",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "vault_type": "learning",
+        "is_important": false
+      }
+    },
+    {
+      "id": "1771706555225_wc7bto",
+      "timestamp": "2026-02-21T20:42:35.225Z",
+      "action": "memory_delete",
+      "email": "delcheck_36244426@example.com",
+      "userId": "1771706554938",
+      "method": "DELETE",
+      "path": "/api/memories/1771706555086",
+      "ip": "::1",
+      "details": {
+        "id": "1771706555086",
+        "vault_type": "learning"
+      }
+    },
+    {
+      "id": "1771706555840_wgstd9",
+      "timestamp": "2026-02-21T20:42:35.840Z",
+      "action": "personal_pin_setup",
+      "email": "delpersonal_169517529@example.com",
+      "userId": "1771706555025",
+      "method": "POST",
+      "path": "/api/personal/pin/setup",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771706556503_bhg77s",
+      "timestamp": "2026-02-21T20:42:36.503Z",
+      "action": "personal_pin_verified",
+      "email": "delpersonal_169517529@example.com",
+      "userId": "1771706555025",
+      "method": "POST",
+      "path": "/api/personal/pin/verify",
+      "ip": "::1",
+      "details": {
+        "expiresAt": 1771707456503
+      }
+    },
+    {
+      "id": "1771706556537_ffm0q2",
+      "timestamp": "2026-02-21T20:42:36.537Z",
+      "action": "memory_create",
+      "email": "delpersonal_169517529@example.com",
+      "userId": "1771706555025",
+      "method": "POST",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "vault_type": "personal",
+        "is_important": false
+      }
+    },
+    {
+      "id": "1771706556577_64ebs3",
+      "timestamp": "2026-02-21T20:42:36.577Z",
+      "action": "memory_delete",
+      "email": "delpersonal_169517529@example.com",
+      "userId": "1771706555025",
+      "method": "DELETE",
+      "path": "/api/memories/1771706556520",
+      "ip": "::1",
+      "details": {
+        "id": "1771706556520",
+        "vault_type": "personal"
+      }
+    },
+    {
+      "id": "1771706830348_6ek73n",
+      "timestamp": "2026-02-21T20:47:10.348Z",
+      "action": "personal_pin_lock",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "POST",
+      "path": "/api/personal/pin/lock",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771706835817_ti28m5",
+      "timestamp": "2026-02-21T20:47:15.817Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771706836062_t5gc20",
+      "timestamp": "2026-02-21T20:47:16.062Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771707611134_peb46m",
+      "timestamp": "2026-02-21T21:00:11.134Z",
+      "action": "personal_pin_lock",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "POST",
+      "path": "/api/personal/pin/lock",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771707627332_vchqqg",
+      "timestamp": "2026-02-21T21:00:27.332Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771707627506_gokchh",
+      "timestamp": "2026-02-21T21:00:27.506Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771707715308_dxip8s",
+      "timestamp": "2026-02-21T21:01:55.308Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771707805603_3f9s00",
+      "timestamp": "2026-02-21T21:03:25.603Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771707835813_envp8d",
+      "timestamp": "2026-02-21T21:03:55.814Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771707877673_w6rhba",
+      "timestamp": "2026-02-21T21:04:37.673Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771707895306_s9xyt7",
+      "timestamp": "2026-02-21T21:04:55.306Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771708014988_sjc39l",
+      "timestamp": "2026-02-21T21:06:54.988Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708072004_pgu13s",
+      "timestamp": "2026-02-21T21:07:52.004Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708073210_vu03o1",
+      "timestamp": "2026-02-21T21:07:53.210Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708084904_ql599q",
+      "timestamp": "2026-02-21T21:08:04.904Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708086504_xby1j7",
+      "timestamp": "2026-02-21T21:08:06.504Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708097667_mk9swq",
+      "timestamp": "2026-02-21T21:08:17.667Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708211430_9xqbij",
+      "timestamp": "2026-02-21T21:10:11.430Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708213247_3vkqtj",
+      "timestamp": "2026-02-21T21:10:13.247Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708225631_mkl0rw",
+      "timestamp": "2026-02-21T21:10:25.631Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708225801_8h4bpi",
+      "timestamp": "2026-02-21T21:10:25.801Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708228313_g3ehwy",
+      "timestamp": "2026-02-21T21:10:28.313Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708229198_0hv164",
+      "timestamp": "2026-02-21T21:10:29.198Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708229444_v02qc2",
+      "timestamp": "2026-02-21T21:10:29.444Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708550760_3pk8sa",
+      "timestamp": "2026-02-21T21:15:50.760Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771708598028_gormp3",
+      "timestamp": "2026-02-21T21:16:38.028Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771708791765_7ijmj7",
+      "timestamp": "2026-02-21T21:19:51.765Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771709200344_4r1hox",
+      "timestamp": "2026-02-21T21:26:40.344Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771709210780_cugdug",
+      "timestamp": "2026-02-21T21:26:50.780Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771709719883_bupbym",
+      "timestamp": "2026-02-21T21:35:19.883Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771841602536_z3dga0",
+      "timestamp": "2026-02-23T10:13:22.536Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771842044891_r8jjr1",
+      "timestamp": "2026-02-23T10:20:44.891Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771842780967_5ntfje",
+      "timestamp": "2026-02-23T10:33:00.967Z",
+      "action": "admin_activities_view",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/admin/activities",
+      "ip": "::1",
+      "details": {
+        "limit": 500
+      }
+    },
+    {
+      "id": "1771843204031_x15ptv",
+      "timestamp": "2026-02-23T10:40:04.031Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771843583366_ey3v3j",
+      "timestamp": "2026-02-23T10:46:23.366Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771843692233_8z6hcm",
+      "timestamp": "2026-02-23T10:48:12.233Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771843712214_c7rc0e",
+      "timestamp": "2026-02-23T10:48:32.214Z",
+      "action": "personal_pin_lock",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "POST",
+      "path": "/api/personal/pin/lock",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843717353_koqlef",
+      "timestamp": "2026-02-23T10:48:37.353Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843717580_gmmqks",
+      "timestamp": "2026-02-23T10:48:37.580Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771843718515_ya8cj2",
+      "timestamp": "2026-02-23T10:48:38.525Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843718929_vhigra",
+      "timestamp": "2026-02-23T10:48:38.929Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771843719649_dxyulp",
+      "timestamp": "2026-02-23T10:48:39.649Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843720002_smb6iz",
+      "timestamp": "2026-02-23T10:48:40.002Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771843720315_u36vff",
+      "timestamp": "2026-02-23T10:48:40.315Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843720582_qljq03",
+      "timestamp": "2026-02-23T10:48:40.582Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771843723085_erx1x5",
+      "timestamp": "2026-02-23T10:48:43.085Z",
+      "action": "personal_pin_lock",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "POST",
+      "path": "/api/personal/pin/lock",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843769783_rfy4j2",
+      "timestamp": "2026-02-23T10:49:29.783Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843770028_y2tqye",
+      "timestamp": "2026-02-23T10:49:30.028Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771843785300_khwpci",
+      "timestamp": "2026-02-23T10:49:45.301Z",
+      "action": "memory_create",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "POST",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "vault_type": "learning",
+        "is_important": true
+      }
+    },
+    {
+      "id": "1771843792757_b96rij",
+      "timestamp": "2026-02-23T10:49:52.757Z",
+      "action": "personal_pin_lock",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "POST",
+      "path": "/api/personal/pin/lock",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843802490_b6ib2h",
+      "timestamp": "2026-02-23T10:50:02.490Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843802565_kcged2",
+      "timestamp": "2026-02-23T10:50:02.565Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 1,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771843818900_h3rrmc",
+      "timestamp": "2026-02-23T10:50:18.900Z",
+      "action": "personal_pin_lock",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "POST",
+      "path": "/api/personal/pin/lock",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771843864859_frgylw",
+      "timestamp": "2026-02-23T10:51:04.859Z",
+      "action": "auth_signup",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signup",
+      "ip": "::1",
+      "details": {
+        "createdUserEmail": "iletmydihburn@gmail.com"
+      }
+    },
+    {
+      "id": "1771843865048_ug5s93",
+      "timestamp": "2026-02-23T10:51:05.048Z",
+      "action": "memories_list",
+      "email": "iletmydihburn@gmail.com",
+      "userId": "1771843864800",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771844566247_sfwor3",
+      "timestamp": "2026-02-23T11:02:46.247Z",
+      "action": "memories_list",
+      "email": "iletmydihburn@gmail.com",
+      "userId": "1771843864800",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771846848018_bfwzrg",
+      "timestamp": "2026-02-23T11:40:48.018Z",
+      "action": "memories_list",
+      "email": "iletmydihburn@gmail.com",
+      "userId": "1771843864800",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771846855850_8kmyvj",
+      "timestamp": "2026-02-23T11:40:55.850Z",
+      "action": "personal_pin_lock",
+      "email": "iletmydihburn@gmail.com",
+      "userId": "1771843864800",
+      "method": "POST",
+      "path": "/api/personal/pin/lock",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771846865135_gggnmz",
+      "timestamp": "2026-02-23T11:41:05.135Z",
+      "action": "auth_signin",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signin",
+      "ip": "::1",
+      "details": {}
+    },
+    {
+      "id": "1771846865432_ogdwgo",
+      "timestamp": "2026-02-23T11:41:05.432Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 1,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771846908449_j3hz7m",
+      "timestamp": "2026-02-23T11:41:48.449Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 1,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771849278806_ky9ohh",
+      "timestamp": "2026-02-23T12:21:18.806Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 1,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771849354753_cj449j",
+      "timestamp": "2026-02-23T12:22:34.753Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 1,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771849623081_qe68zk",
+      "timestamp": "2026-02-23T12:27:03.081Z",
+      "action": "memory_delete",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "DELETE",
+      "path": "/api/memories/1771843785251",
+      "ip": "::1",
+      "details": {
+        "id": "1771843785251",
+        "vault_type": "learning"
+      }
+    },
+    {
+      "id": "1771849913780_394x0h",
+      "timestamp": "2026-02-23T12:31:53.781Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771857497096_etncej",
+      "timestamp": "2026-02-23T14:38:17.096Z",
+      "action": "memories_list",
+      "email": "ijaborblossom@gmail.com",
+      "userId": "1770398813337",
+      "method": "GET",
+      "path": "/api/memories",
+      "ip": "::1",
+      "details": {
+        "total": 0,
+        "personalUnlocked": false
+      }
+    },
+    {
+      "id": "1771864699096_jm289f",
+      "timestamp": "2026-02-23T16:38:19.096Z",
+      "action": "auth_signup",
+      "email": null,
+      "userId": null,
+      "method": "POST",
+      "path": "/api/auth/signup",
+      "ip": "::1",
+      "details": {
+        "createdUserEmail": "rendercheck_1712687305@test.com"
+      }
+    }
+  ]
+}
