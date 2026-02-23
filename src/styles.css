@@ -4035,3 +4035,22 @@ select {
     min-height: 44px;
   }
 }
+
+/* ===== Tap Reliability Fix (Mobile) ===== */
+.background-canvas,
+.globe-container,
+.hero::before,
+.hero::after {
+  pointer-events: none !important;
+}
+
+.hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.ai-hero-button {
+  position: relative;
+  z-index: 2;
+  touch-action: manipulation;
+}
