@@ -3997,3 +3997,41 @@ select {
     font-size: 0.78rem !important;
   }
 }
+
+/* ===== Mobile Stability Overrides (Final) ===== */
+@media (max-width: 768px) {
+  .app-container {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body #main-page .navbar {
+    position: sticky;
+    top: 0;
+  }
+
+  body #main-page .mobile-nav-panel {
+    max-height: 52vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  #ai-page .form-container {
+    padding-top: calc(0.55rem + var(--safe-top));
+    padding-bottom: calc(0.9rem + var(--safe-bottom));
+  }
+
+  #ai-page .form-card {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  #ai-page .ai-chat-container {
+    min-height: 260px;
+    max-height: 46vh;
+  }
+
+  #ai-page #ai-input,
+  #ai-page .ai-submit-btn {
+    min-height: 44px;
+  }
+}
