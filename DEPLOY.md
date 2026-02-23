@@ -44,8 +44,8 @@ Notes:
 ### Netlify setup
 1. Connect repo to Netlify.
 2. Build command: *(leave empty)*.
-3. Publish directory: `.vscode` (already set in `netlify.toml`).
-4. After first deploy, edit `.vscode/netlify-config.js`:
+3. Publish directory: `src` (already set in `netlify.toml`).
+4. After first deploy, edit `src/netlify-config.js`:
    - `window.MEMORY_VAULT_API_URL = 'https://your-backend-domain';`
 5. Redeploy.
 
@@ -55,7 +55,7 @@ Notes:
 
 ## Vercel Support (Frontend + API)
 - This repo supports Vercel with:
-  - Static frontend from `.vscode`
+  - Static frontend from `src`
   - Serverless API handler from `api/index.js`
 
 ### Vercel setup
@@ -77,3 +77,4 @@ Notes:
 Notes:
 - Routing is controlled by `vercel.json`.
 - API requests go to `/api/*` and are handled by `api/index.js`.
+

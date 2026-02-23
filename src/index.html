@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Vault - Preserving Humanity's Wisdom</title>
+  <script src="/_sdk/element_sdk.js" onerror="this.remove()"></script>
+  <script src="/_sdk/data_sdk.js" onerror="this.remove()"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&amp;family=Lora:wght@400;500;600&amp;family=Space+Grotesk:wght@400;500;600;700&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>@view-transition { navigation: auto; }</style>
+  <script src="https://cdn.tailwindcss.com" type="text/javascript"></script>
+</head>
+<body class="h-full">
+  <!-- Background -->
+  <div class="background-canvas">
+    <div class="cosmic-glow"></div>
+    <div class="cosmic-glow"></div>
+    <!-- Giant Spinning Earth Globe -->
+    <div class="globe-container">
+      <svg viewbox="0 0 200 200" class="globe-svg">
+        <!-- Earth sphere -->
+        <defs>
+          <radialgradient id="earthSphere" cx="35%" cy="35%">
+            <stop offset="0%" class="globe-stop-1" />
+            <stop offset="70%" class="globe-stop-2" />
+            <stop offset="100%" class="globe-stop-3" />
+          </radialgradient>
+          <radialgradient id="landGradient" cx="30%" cy="30%">
+            <stop offset="0%" class="globe-stop-4" />
+            <stop offset="50%" class="globe-stop-5" />
+            <stop offset="100%" class="globe-stop-6" />
+          </radialgradient>
+        </defs>
+        <!-- Base ocean sphere with 3D lighting -->
+        <circle cx="100" cy="100" r="85" fill="url(#earthSphere)" />
+        <!-- Realistic Continents -->
+        <!-- North America -->
+        <path d="M 45 45 Q 50 35 58 38 Q 65 40 68 45 Q 70 52 68 60 Q 66 68 62 75 Q 58 80 52 82 Q 48 78 45 72 Q 42 65 43 58 Q 44 50 45 45 Z" fill="url(#landGradient)" opacity="0.95" />
+        <path d="M 52 48 Q 56 46 60 48 Q 62 52 61 56 Q 58 60 54 59 Q 51 56 52 48 Z" fill="#66bb6a" opacity="0.9" />
+        <!-- Alaska -->
+        <ellipse cx="35" cy="38" rx="6" ry="4" fill="url(#landGradient)" opacity="0.9" />
+        <!-- Central America -->
+        <path d="M 54 84 Q 56 88 58 92 Q 57 95 55 96 Q 53 94 52 90 Q 52 86 54 84 Z" fill="url(#landGradient)" opacity="0.95" />
+        <!-- South America -->
+        <path d="M 58 98 Q 62 96 66 100 Q 69 108 70 118 Q 69 128 66 135 Q 62 140 58 138 Q 56 132 56 124 Q 55 115 56 108 Q 57 102 58 98 Z" fill="url(#landGradient)" opacity="0.95" />
+        <ellipse cx="62" cy="115" rx="6" ry="12" fill="#4caf50" opacity="0.8" />
+        <!-- Africa -->
+        <path d="M 95 80 Q 100 78 106 80 Q 112 85 116 92 Q 118 100 118 108 Q 116 118 112 126 Q 108 132 102 134 Q 96 132 92 126 Q 90 118 90 110 Q 90 100 92 92 Q 94 85 95 80 Z" fill="url(#landGradient)" opacity="0.95" />
+        <ellipse cx="105" cy="105" rx="10" ry="18" fill="#4caf50" opacity="0.85" />
+        <!-- Madagascar -->
+        <ellipse cx="120" cy="120" rx="2" ry="5" fill="url(#landGradient)" opacity="0.9" />
+        <!-- Europe -->
+        <path d="M 95 52 Q 100 48 105 50 Q 110 54 112 60 Q 110 66 105 68 Q 100 66 96 62 Q 94 56 95 52 Z" fill="url(#landGradient)" opacity="0.95" />
+        <ellipse cx="103" cy="58" rx="7" ry="6" fill="#66bb6a" opacity="0.9" />
+        <!-- Scandinavia -->
+        <ellipse cx="108" cy="48" rx="4" ry="6" fill="url(#landGradient)" opacity="0.9" />
+        <!-- Asia -->
+        <path d="M 115 45 Q 125 42 135 45 Q 145 50 152 58 Q 156 66 158 75 Q 156 84 150 90 Q 142 94 135 92 Q 128 88 122 82 Q 118 75 116 68 Q 115 58 115 45 Z" fill="url(#landGradient)" opacity="0.95" />
+        <!-- Siberia -->
+        <ellipse cx="135" cy="52" rx="18" ry="10" fill="#4caf50" opacity="0.85" />
+        <!-- Indian subcontinent -->
+        <path d="M 130 85 Q 135 82 140 85 Q 142 92 140 98 Q 136 102 132 100 Q 129 94 130 85 Z" fill="url(#landGradient)" opacity="0.9" />
+        <!-- Southeast Asia -->
+        <ellipse cx="148" cy="95" rx="6" ry="4" fill="url(#landGradient)" opacity="0.9" />
+        <!-- Japan -->
+        <ellipse cx="165" cy="68" rx="2" ry="6" fill="url(#landGradient)" opacity="0.9" />
+        <!-- Australia -->
+        <path d="M 150 120 Q 158 118 164 122 Q 168 128 167 135 Q 163 140 156 140 Q 150 136 148 130 Q 148 125 150 120 Z" fill="url(#landGradient)" opacity="0.95" />
+        <ellipse cx="158" cy="130" rx="10" ry="8" fill="#4caf50" opacity="0.85" />
+        <!-- Greenland -->
+        <ellipse cx="72" cy="28" rx="8" ry="6" fill="url(#landGradient)" opacity="0.9" />
+        <!-- Antarctica (bottom edge) -->
+        <ellipse cx="100" cy="175" rx="60" ry="8" fill="#e8f5e9" opacity="0.7" />
+        <!-- Arctic ice (top) -->
+        <ellipse cx="100" cy="20" rx="25" ry="8" fill="#e8f5e9" opacity="0.6" />
+        <!-- Animated Clouds with realistic shapes -->
+        <ellipse cx="75" cy="65" rx="12" ry="6" fill="#ffffff" opacity="0.25">
+          <animate attributename="cx" values="75;85;75" dur="18s" repeatcount="indefinite" />
+        </ellipse>
+        <ellipse cx="78" cy="67" rx="8" ry="5" fill="#ffffff" opacity="0.2">
+          <animate attributename="cx" values="78;88;78" dur="18s" repeatcount="indefinite" />
+        </ellipse>
+        <ellipse cx="125" cy="100" rx="14" ry="7" fill="#ffffff" opacity="0.25">
+          <animate attributename="cx" values="125;135;125" dur="22s" repeatcount="indefinite" />
+        </ellipse>
+        <ellipse cx="128" cy="102" rx="10" ry="6" fill="#ffffff" opacity="0.2">
+          <animate attributename="cx" values="128;138;128" dur="22s" repeatcount="indefinite" />
+        </ellipse>
+        <ellipse cx="45" cy="110" rx="10" ry="5" fill="#ffffff" opacity="0.25">
+          <animate attributename="cx" values="45;55;45" dur="20s" repeatcount="indefinite" />
+        </ellipse>
+        <!-- Atmosphere glow with realistic colors -->
+        <circle cx="100" cy="100" r="85" fill="none" stroke="#4fc3f7" stroke-width="3" opacity="0.4" />
+        <circle cx="100" cy="100" r="88" fill="none" stroke="#81d4fa" stroke-width="2" opacity="0.3" />
+        <circle cx="100" cy="100" r="91" fill="none" stroke="#b3e5fc" stroke-width="1" opacity="0.2" />
+        <!-- Light reflection (makes it look 3D) -->
+        <ellipse cx="75" cy="70" rx="25" ry="20" fill="#ffffff" opacity="0.15" />
+      </svg>
+    </div>
+    <style>
+      @keyframes spin {
+        from { opacity: 1; }
+        to { opacity: 1; }
+      }
+    </style>
+  </div>
+
+  <!-- Main Container -->
+  <div class="app-container">
+    <!-- MAIN PAGE -->
+    <div id="main-page" class="page active">
+      <!-- Navigation -->
+      <nav class="navbar">
+        <div class="navbar-content">
+          <div class="logo-section">
+            <span class="logo-icon">🧠</span>
+            <div class="logo-text">
+              <h1 id="app-title">Memory Vault</h1>
+              <p id="app-tagline">Your everyday study memory system</p>
+            </div>
+          </div>
+          <div class="nav-status-strip">
+            <span class="nav-pill" id="daily-greeting">Good day</span>
+            <span class="nav-pill nav-pill-soft" id="daily-focus">One step at a time.</span>
+          </div>
+          <div class="mobile-jumia-nav" id="mobile-jumia-nav">
+            <div class="mobile-jumia-top">
+              <button type="button" class="mobile-icon-btn" id="mobile-menu-toggle" onclick="toggleMobileNavPanel(event)" aria-expanded="false" aria-label="Open menu">☰</button>
+              <div class="mobile-brand">
+                <span class="mobile-brand-icon">🧠</span>
+                <span class="mobile-brand-text">Memory Vault</span>
+              </div>
+              <button class="mobile-icon-btn" id="mobile-theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">Light</button>
+            </div>
+            <div class="mobile-jumia-search">
+              <input type="text" id="mobile-search-input" class="search-input" placeholder="Search notes, lessons, and reflections..." onkeyup="filterMemories(this.value)">
+            </div>
+            <div class="mobile-nav-panel" id="mobile-nav-panel">
+              <div class="mobile-panel-row">
+                <button type="button" class="nav-btn" onclick="showStats(); closeMobileNavPanel();">Progress</button>
+                <button type="button" class="nav-btn" onclick="showFavorites(); closeMobileNavPanel();">Highlights</button>
+                <button type="button" class="nav-btn" onclick="exportMemories(); closeMobileNavPanel();">Backup</button>
+              </div>
+              <div class="mobile-panel-row" id="mobile-panel-auth">
+                <button type="button" class="nav-btn" onclick="openAuth('signin'); closeMobileNavPanel();">Sign In</button>
+                <button type="button" class="nav-btn" onclick="openAuth('signup'); closeMobileNavPanel();">Sign Up</button>
+              </div>
+              <div class="mobile-panel-user" id="mobile-panel-user">
+                <div class="user-info-box">
+                  <div class="user-name" id="mobile-panel-user-name">Welcome!</div>
+                  <div class="user-email" id="mobile-panel-user-email"></div>
+                </div>
+                <button type="button" class="nav-btn" onclick="logout(); closeMobileNavPanel();">Log Out</button>
+              </div>
+            </div>
+          </div>
+          <div class="memory-search" id="search-bar-container">
+            <input type="text" id="search-input" class="search-input" placeholder="Search notes, lessons, and reflections..." onkeyup="filterMemories(this.value)">
+          </div>
+          <div class="nav-buttons" id="nav-buttons">
+            <div class="nav-dropdown" id="nav-dropdown">
+              <button type="button" class="nav-btn nav-menu-btn" id="nav-menu-btn" onclick="toggleNavMenu(event)" aria-haspopup="true" aria-expanded="false">
+                Menu
+              </button>
+              <div class="nav-dropdown-menu" id="nav-dropdown-menu">
+                <button type="button" class="nav-dropdown-item" onclick="showStats(); closeNavMenu();">Progress</button>
+                <button type="button" class="nav-dropdown-item" onclick="showFavorites(); closeNavMenu();">Highlights</button>
+                <button type="button" class="nav-dropdown-item" onclick="exportMemories(); closeNavMenu();">Backup</button>
+              </div>
+            </div>
+            <button class="theme-toggle nav-theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">Theme</button>
+            <div id="auth-buttons" class="auth-button-group">
+              <button type="button" class="nav-btn" onclick="openAuth('signin')">Sign In</button>
+              <button type="button" class="nav-btn" onclick="openAuth('signup')">Sign Up</button>
+            </div>
+            <div id="user-section" class="user-section-group">
+              <div class="user-info-box">
+                <div class="user-name" id="user-display-name">Welcome!</div>
+                <div class="user-email" id="user-display-email"></div>
+              </div>
+              <button type="button" class="nav-btn" onclick="logout()">Log Out</button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Hero -->
+      <section class="hero">
+        <h2 class="hero-title" id="hero-title">Build your memory, one day at a time</h2>
+        <p class="hero-subtitle" id="hero-subtitle">Keep class notes, revision insights, and personal reflections in one calm space you can trust.</p>
+        <button type="button" class="btn btn-primary ai-hero-button" onclick="openAIAssistant()">Open Assistant</button>
+      </section>
+
+      <section class="student-pulse">
+        <div class="pulse-card">
+          <p class="pulse-label">Current streak</p>
+          <p class="pulse-value"><span id="streak-count">0</span> days</p>
+          <p class="pulse-subtext" id="streak-note">Start today by saving one meaningful memory.</p>
+        </div>
+        <div class="pulse-card">
+          <p class="pulse-label">Today's prompt</p>
+          <p class="pulse-subtext" id="daily-prompt">What concept did you understand better today than yesterday?</p>
+          <div class="pulse-actions">
+            <button type="button" class="btn btn-secondary pulse-btn" onclick="openAddForm('learning')">Add learning note</button>
+            <button type="button" class="btn btn-secondary pulse-btn" onclick="openDiaryForm()">Quick reflection</button>
+          </div>
+        </div>
+        <div class="pulse-card">
+          <p class="pulse-label">Reminder</p>
+          <p class="pulse-subtext" id="daily-reminder">Return daily for small updates. Consistency compounds.</p>
+        </div>
+      </section>
+
+      <!-- Trending Memories -->
+      <section class="vault-section trending-section">
+        <h3 class="section-title">Trending Memories</h3>
+        <p class="section-subtitle">Popular memories from the community vaults right now.</p>
+        <div id="trending-memories" class="memories-grid trending-grid"></div>
+      </section>
+
+      <!-- Vaults -->
+      <section class="vault-section">
+        <h3 class="section-title">Choose Your Vault</h3>
+        <p class="section-subtitle">Store private stories, preserve culture, and share future-ready wisdom.</p>
+        <div class="vault-grid">
+          <div class="vault-card vault-card-personal" onclick="openVault('personal')">
+            <span class="vault-icon">PV</span>
+            <h4 class="vault-name" id="personal-vault-name">Personal Life Vault</h4>
+            <p class="vault-description">Your private diary with PIN protection for personal reflections and memories</p>
+            <div class="vault-count">Private and secure</div>
+          </div>
+          <div class="vault-card vault-card-learning" onclick="openVault('learning')">
+            <span class="vault-icon">KN</span>
+            <h4 class="vault-name" id="learning-vault-name">Knowledge & Education</h4>
+            <p class="vault-description">Archive lessons, skills, and educational insights</p>
+            <div class="vault-count"><span id="learning-count">0</span> memories</div>
+          </div>
+          <div class="vault-card vault-card-cultural" onclick="openVault('cultural')">
+            <span class="vault-icon">CH</span>
+            <h4 class="vault-name" id="cultural-vault-name">Cultural Heritage</h4>
+            <p class="vault-description">Safeguard cultural wisdom and traditions</p>
+            <div class="vault-count"><span id="cultural-count">0</span> memories</div>
+          </div>
+          <div class="vault-card vault-card-future" onclick="openVault('future')">
+            <span class="vault-icon">FW</span>
+            <h4 class="vault-name" id="future-vault-name">Future Wisdom</h4>
+            <p class="vault-description">Document wisdom for future generations</p>
+            <div class="vault-count"><span id="future-count">0</span> memories</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <p class="footer-text">© 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
+      </footer>
+    </div>
+
+    <!-- PERSONAL DIARY PAGE -->
+    <div id="personal-page" class="page">
+      <button type="button" class="back-btn" onclick="backToMain()">← Back to Vaults</button>
+      <div class="diary-container">
+        <div class="diary-book">
+          <h2 class="diary-title">Personal Diary</h2>
+          <!-- PIN Interface -->
+          <div id="pin-interface" class="pin-interface">
+            <p class="pin-unlock-text">Enter your PIN to unlock</p>
+            <div class="pin-display">
+              <div class="pin-dot"></div>
+              <div class="pin-dot"></div>
+              <div class="pin-dot"></div>
+              <div class="pin-dot"></div>
+              <div class="pin-dot"></div>
+              <div class="pin-dot"></div>
+            </div>
+            <div class="pin-keypad">
+              <button type="button" class="pin-key" onclick="enterPin('1')">1</button>
+              <button type="button" class="pin-key" onclick="enterPin('2')">2</button>
+              <button type="button" class="pin-key" onclick="enterPin('3')">3</button>
+              <button type="button" class="pin-key" onclick="enterPin('4')">4</button>
+              <button type="button" class="pin-key" onclick="enterPin('5')">5</button>
+              <button type="button" class="pin-key" onclick="enterPin('6')">6</button>
+              <button type="button" class="pin-key" onclick="enterPin('7')">7</button>
+              <button type="button" class="pin-key" onclick="enterPin('8')">8</button>
+              <button type="button" class="pin-key" onclick="enterPin('9')">9</button>
+              <button type="button" class="pin-key" onclick="clearPin()">⌫</button>
+              <button type="button" class="pin-key" onclick="enterPin('0')">0</button>
+              <button type="button" class="pin-key" onclick="submitPin()">OK</button>
+            </div>
+            <div id="pin-message" class="pin-message-container"></div>
+            <button type="button" class="btn btn-secondary forgot-pin-button" onclick="resetPin()">Forgot PIN?</button>
+          </div>
+          <!-- Diary Content (Hidden until unlocked) -->
+          <div id="diary-content" class="diary-content">
+            <div class="diary-welcome">
+              <h3 class="welcome-title" id="welcome-name">Welcome!</h3>
+              <p class="diary-subtitle">Your private writing space.</p>
+            </div>
+            <button type="button" class="btn btn-primary diary-form-btn" onclick="openDiaryForm()">Write New Entry</button>
+            <div id="diary-entries" class="diary-entries"></div>
+          </div>
+        </div>
+      </div>
+      <footer class="footer">
+        <p class="footer-text">© 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
+      </footer>
+    </div>
+
+    <!-- LEARNING VAULT PAGE -->
+    <div id="learning-page" class="page">
+      <button type="button" class="back-btn" onclick="backToMain()">← Back to Vaults</button>
+      <div class="vault-inner">
+        <div class="vault-header">
+          <div class="vault-header-icon">KN</div>
+          <h2 class="vault-header-title">Knowledge & Education</h2>
+          <p class="vault-header-subtitle">Archive your lessons, skills, and educational insights</p>
+          <button type="button" class="btn btn-primary add-memory-btn" onclick="openAddForm('learning')">Add Memory</button>
+        </div>
+        <div id="learning-memories" class="memories-grid"></div>
+      </div>
+      <footer class="footer">
+        <p class="footer-text">© 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
+      </footer>
+    </div>
+
+    <!-- CULTURAL VAULT PAGE -->
+    <div id="cultural-page" class="page">
+      <button type="button" class="back-btn" onclick="backToMain()">← Back to Vaults</button>
+      <div class="vault-inner">
+        <div class="vault-header">
+          <div class="vault-header-icon">CH</div>
+          <h2 class="vault-header-title">Cultural Heritage</h2>
+          <p class="vault-header-subtitle">Safeguard cultural wisdom and traditions</p>
+          <button type="button" class="btn btn-primary cultural-add-btn" onclick="openAddForm('cultural')">Add Memory</button>
+        </div>
+        <div id="cultural-memories" class="memories-grid"></div>
+      </div>
+      <footer class="footer">
+        <p class="footer-text">© 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
+      </footer>
+    </div>
+
+    <!-- FUTURE VAULT PAGE -->
+    <div id="future-page" class="page">
+      <button type="button" class="back-btn" onclick="backToMain()">← Back to Vaults</button>
+      <div class="vault-inner">
+        <div class="vault-header">
+          <div class="vault-header-icon">FW</div>
+          <h2 class="vault-header-title">Future Wisdom</h2>
+          <p class="vault-header-subtitle">Document wisdom for future generations</p>
+          <button type="button" class="btn btn-primary add-memory-btn" onclick="openAddForm('future')">Add Memory</button>
+        </div>
+        <div id="future-memories" class="memories-grid"></div>
+      </div>
+      <footer class="footer">
+        <p class="footer-text">© 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
+      </footer>
+    </div>
+
+    <!-- ADD MEMORY FORM PAGE -->
+    <div id="form-page" class="page">
+      <button type="button" class="back-btn" onclick="closeForm()">← Back</button>
+      <div class="form-container">
+        <div class="vault-header">
+          <div class="vault-header-icon" id="form-icon">NEW</div>
+          <h2 class="vault-header-title" id="form-title">Add Memory</h2>
+          <p class="vault-header-subtitle" id="form-subtitle">Share your knowledge</p>
+        </div>
+        <div class="form-card">
+          <form id="memory-form">
+            <div class="form-group">
+              <label class="form-label" for="memory-title">Title</label>
+              <input type="text" id="memory-title" class="form-input" placeholder="Give your memory a title..." required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="memory-content">Content</label>
+              <textarea id="memory-content" class="form-textarea" placeholder="Share your knowledge, wisdom, or experience..." required></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-checkbox">
+                <input type="checkbox" id="memory-important">
+                <span class="important-checkbox-label">Mark as important</span>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" onclick="closeForm()">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="submit-btn">
+                <span id="submit-text">Save Memory</span>
+              </button>
+            </div>
+            <div id="form-message"></div>
+          </form>
+        </div>
+      </div>
+      <footer class="footer">
+        <p class="footer-text">© 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
+      </footer>
+    </div>
+
+    <!-- AUTH PAGE (Sign In / Sign Up) -->
+    <div id="auth-page" class="page">
+      <button type="button" class="back-btn" onclick="closeAuth()">← Back to Home</button>
+      <div class="form-container">
+        <div class="vault-header">
+          <div class="vault-header-icon">AUTH</div>
+          <h2 class="vault-header-title" id="auth-title">Sign In</h2>
+          <p class="vault-header-subtitle" id="auth-subtitle">Access your memory vault</p>
+        </div>
+        <div class="form-card">
+          <form id="auth-form">
+            <div class="form-group">
+              <label class="form-label" for="auth-email">Email</label>
+              <input type="email" id="auth-email" class="form-input" placeholder="your@email.com" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="auth-password">Password</label>
+              <div class="password-field">
+                <input type="password" id="auth-password" class="form-input" placeholder="Enter your password" required>
+                <button type="button" class="password-toggle-btn" id="auth-password-toggle" onclick="toggleAuthPasswordVisibility()" aria-label="Show password">Show</button>
+              </div>
+            </div>
+            <div class="form-group auth-name-group" id="auth-name-group">
+              <label class="form-label" for="auth-name">Full Name</label>
+              <input type="text" id="auth-name" class="form-input" placeholder="Your name">
+            </div>
+            <div class="form-actions auth-form-actions">
+              <button type="submit" class="btn btn-primary auth-submit-btn" id="auth-submit-btn">
+                <span id="auth-submit-text">Sign In</span>
+              </button>
+            </div>
+            <div class="auth-toggle-container">
+              <p class="auth-toggle-text">
+                <span id="auth-switch-text">Don't have an account?</span>
+                <button type="button" class="btn btn-secondary auth-toggle-btn" onclick="toggleAuthMode()">
+                  <span id="auth-switch-btn-text">Sign Up</span>
+                </button>
+              </p>
+            </div>
+            <div id="auth-message"></div>
+          </form>
+        </div>
+      </div>
+      <footer class="footer">
+        <p class="footer-text">© 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
+      </footer>
+    </div>
+
+    <!-- AI ASSISTANT PAGE -->
+    <div id="ai-page" class="page">
+      <button type="button" class="back-btn" onclick="closeAI()">← Back to Home</button>
+      <div class="form-container">
+        <div class="vault-header">
+          <div class="vault-header-icon">AI</div>
+          <h2 class="vault-header-title">AI Assistant</h2>
+          <p class="vault-header-subtitle">Ask Memory Vault questions and get grounded help from your vault data</p>
+        </div>
+        <div class="form-card">
+          <div id="ai-chat" class="ai-chat-container">
+            <div class="ai-welcome">
+              <div class="ai-welcome-icon">AI</div>
+              <p class="ai-welcome-title">Hello, I'm your assistant.</p>
+              <p class="ai-welcome-subtitle">Ask about Memory Vault features, your memories, and how to use your vault better.</p>
+            </div>
+          </div>
+          <form id="ai-form">
+            <div class="form-group">
+              <label class="form-label" for="ai-input">Ask a question</label>
+              <input type="text" id="ai-input" class="form-input" placeholder="e.g., 'Summarize my latest learning memories' or 'How do I secure my Personal Vault PIN?'" required>
+            </div>
+            <div class="form-actions ai-form-actions">
+              <button type="submit" class="btn btn-primary ai-submit-btn">Send Message</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>  <div id="stats-modal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal('stats-modal')">&times;</button>
+      <h2>Memory Statistics</h2>
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number" id="stat-total">0</div>
+          <div class="stat-label">Total Memories</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-today">0</div>
+          <div class="stat-label">Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-week">0</div>
+          <div class="stat-label">This Week</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-month">0</div>
+          <div class="stat-label">This Month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-personal">0</div>
+          <div class="stat-label">Personal</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-learning">0</div>
+          <div class="stat-label">Learning</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-cultural">0</div>
+          <div class="stat-label">Cultural</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-future">0</div>
+          <div class="stat-label">Future Vision</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Favorites Modal -->
+  <div id="favorites-modal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal('favorites-modal')">&times;</button>
+      <h2>Favorite Memories</h2>
+      <ul class="favorites-list" id="favorites-list">
+        <li class="favorites-empty-message">No favorites yet. Star a memory to add it here!</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Export Modal -->
+  <div id="export-modal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal('export-modal')">&times;</button>
+      <h2>Export Memories</h2>
+      <p class="export-description">Choose a format to download your memories:</p>
+      <div class="export-scope">
+        <label class="export-scope-option">
+          <input type="radio" name="export-scope" value="all" checked onchange="updateExportPreview()">
+          <span>All memories</span>
+        </label>
+        <label class="export-scope-option">
+          <input type="radio" name="export-scope" value="important" onchange="updateExportPreview()">
+          <span>Important only</span>
+        </label>
+      </div>
+      <p class="export-summary" id="export-summary">Preparing export details...</p>
+      <div class="export-options">
+        <button class="export-btn" onclick="downloadMemories('json')">JSON Format</button>
+        <button class="export-btn" onclick="downloadMemories('csv')">CSV Format</button>
+        <button class="export-btn" onclick="downloadMemories('txt')">Text Format</button>
+      </div>
+      <p class="export-note">Your data will be saved to your device's Downloads folder.</p>
+    </div>
+  </div>
+
+  <script src="netlify-config.js"></script>
+  <script src="script.js"></script>
+  <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9c493e66407694bb',t:'MTc2OTUyNzMyNy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
+</body>
+</html>
+
+
+
+

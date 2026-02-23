@@ -41,8 +41,8 @@ This will:
 | `setup.bat`          | Full installation + auto-start | First time or fresh install |
 | `start.bat`          | Just start the server          | Running the app after setup |
 | `open.bat`           | Open in browser                | Server already running      |
-| `server.js`          | Backend code                   | Reference/debugging         |
-| `.vscode/index.html` | Frontend code                  | Viewing HTML structure      |
+| `backend/server.js`          | Backend code                   | Reference/debugging         |
+| `src/index.html` | Frontend code                  | Viewing HTML structure      |
 
 ---
 
@@ -129,3 +129,4 @@ Everything will be installed and running automatically. 🚀
 ---
 
 **Questions?** Check TESTING.md or README.md for more details.
+

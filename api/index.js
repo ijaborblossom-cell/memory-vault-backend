@@ -1,4 +1,4 @@
-const { app, ensureStorageInitialized } = require('../server');
+const { app, ensureStorageInitialized } = require('../backend/server');
 
 module.exports = async (req, res) => {
   try {

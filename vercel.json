@@ -1,14 +1,20 @@
 {
   "version": 2,
   "functions": {
-    "api/index.js": {
-      "runtime": "nodejs20.x"
-    }
+    "api/index.js": { "runtime": "nodejs20.x" },
+    "api/auth/signup.js": { "runtime": "nodejs20.x" },
+    "api/auth/signin.js": { "runtime": "nodejs20.x" },
+    "api/memories/index.js": { "runtime": "nodejs20.x" },
+    "api/health.js": { "runtime": "nodejs20.x" }
   },
   "routes": [
+    { "src": "/api/auth/signup", "dest": "/api/auth/signup.js" },
+    { "src": "/api/auth/signin", "dest": "/api/auth/signin.js" },
+    { "src": "/api/memories(.*)", "dest": "/api/memories/index.js" },
+    { "src": "/api/health", "dest": "/api/health.js" },
     { "src": "/api/(.*)", "dest": "/api/index.js" },
-    { "src": "/$", "dest": "/.vscode/index.html" },
-    { "src": "/([^.]*)", "dest": "/.vscode/index.html" },
-    { "src": "/(.*)", "dest": "/.vscode/$1" }
+    { "src": "/$", "dest": "/src/index.html" },
+    { "src": "/([^.]*)", "dest": "/src/index.html" },
+    { "src": "/(.*)", "dest": "/src/$1" }
   ]
 }

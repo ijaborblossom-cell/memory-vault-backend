@@ -109,15 +109,15 @@ npm run dev
 
 ```text
 Memory Vault/
-├── server.js             # Backend Express server
+├── backend/server.js     # Backend Express server
 ├── package.json          # Dependencies
-├── users.json            # User data (created on first run)
-├── memory_vault_knowledge.json # Verified app knowledge used by AI
-└── .vscode/
+├── backend/users.json    # User data (created on first run)
+├── backend/memory_vault_knowledge.json # Verified app knowledge used by AI
+└── src/
     ├── index.html        # Main HTML file
     ├── styles.css        # Styling with animations
     ├── script.js         # Frontend logic
-    └── settings.json     # VS Code settings
+    └── netlify-config.js # Frontend API URL config
 ```
 
 ## 🎯 Next Steps
@@ -131,7 +131,7 @@ Memory Vault/
 
 ## 🤖 AI Knowledge Base
 
-Memory Vault AI now reads a curated knowledge file: `memory_vault_knowledge.json`.
+Memory Vault AI now reads a curated knowledge file: `backend/memory_vault_knowledge.json`.
 
 - Add or edit entries in this file to teach the assistant accurate product facts.
 - Each entry supports `topic`, `keywords`, `answer`, and `sources`.
@@ -140,3 +140,4 @@ Memory Vault AI now reads a curated knowledge file: `memory_vault_knowledge.json
 ---
 
 Created with ❤️ by Ijabor Blossom | February 2026
+

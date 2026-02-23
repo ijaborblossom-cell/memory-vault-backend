@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
+const { connectDB } = require('./connectDB');
 require('dotenv').config();
 
 const app = express();
@@ -15,6 +17,7 @@ const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
 const ADMIN_OWNER_EMAIL = (process.env.ADMIN_OWNER_EMAIL || '').toLowerCase();
 const PERSONAL_UNLOCK_TTL_MS = 15 * 60 * 1000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
+const MONGO_URI = process.env.MONGO_URI || '';
 
 const allowedOriginList = (process.env.CORS_ORIGINS || process.env.FRONTEND_ORIGIN || '')
   .split(',')
@@ -41,7 +44,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '.vscode')));
+app.use(express.static(path.join(__dirname, '..', 'src')));
 
 const dataFile = path.join(__dirname, 'users.json');
 const knowledgeFile = path.join(__dirname, 'memory_vault_knowledge.json');
@@ -49,6 +52,10 @@ const adminDataFile = path.join(__dirname, 'admin_activities.json');
 const personalUnlockSessions = new Map();
 let storageMode = 'json';
 let pgPool = null;
+let mongoReady = false;
+let MongoUser = null;
+let MongoMemory = null;
+let MongoAdminActivity = null;
 let dataCache = { users: [], memories: {} };
 let adminCache = { activities: [] };
 let persistQueue = Promise.resolve();
@@ -109,6 +116,162 @@ function enqueuePersist(task) {
     .catch((error) => {
       console.error('Storage persist error:', error.message);
     });
+}
+
+function ensureMongoModels() {
+  if (MongoUser && MongoMemory && MongoAdminActivity) {
+    return;
+  }
+
+  const userSchema = new mongoose.Schema(
+    {
+      id: { type: String, required: true, unique: true, index: true },
+      email: { type: String, required: true, unique: true, index: true },
+      password: { type: String, required: true },
+      name: { type: String, default: '' },
+      personalPinHash: { type: String, default: null },
+      createdAt: { type: Date, default: Date.now }
+    },
+    { collection: 'users', versionKey: false }
+  );
+
+  const memorySchema = new mongoose.Schema(
+    {
+      id: { type: String, required: true, unique: true, index: true },
+      user_email: { type: String, required: true, index: true },
+      title: { type: String, default: '' },
+      content: { type: String, default: '' },
+      is_important: { type: Boolean, default: false },
+      vault_type: { type: String, default: '' },
+      timestamp: { type: Date, default: Date.now },
+      isFavorite: { type: Boolean, default: false }
+    },
+    { collection: 'memories', versionKey: false }
+  );
+
+  const adminActivitySchema = new mongoose.Schema(
+    {
+      id: { type: String, required: true, unique: true, index: true },
+      timestamp: { type: Date, default: Date.now, index: true },
+      action: { type: String, default: '' },
+      email: { type: String, default: null },
+      userId: { type: String, default: null },
+      method: { type: String, default: '' },
+      path: { type: String, default: '' },
+      ip: { type: String, default: '' },
+      details: { type: mongoose.Schema.Types.Mixed, default: {} }
+    },
+    { collection: 'admin_activities', versionKey: false }
+  );
+
+  MongoUser = mongoose.models.MemoryVaultUser || mongoose.model('MemoryVaultUser', userSchema);
+  MongoMemory = mongoose.models.MemoryVaultMemory || mongoose.model('MemoryVaultMemory', memorySchema);
+  MongoAdminActivity = mongoose.models.MemoryVaultAdminActivity || mongoose.model('MemoryVaultAdminActivity', adminActivitySchema);
+}
+
+async function loadDataFromMongo() {
+  const users = await MongoUser.find({}).sort({ createdAt: 1, id: 1 }).lean();
+  const memoriesRows = await MongoMemory.find({}).sort({ timestamp: -1, id: -1 }).lean();
+  const activitiesRows = await MongoAdminActivity.find({}).sort({ timestamp: -1, id: -1 }).limit(5000).lean();
+
+  const memories = {};
+  for (const row of memoriesRows) {
+    const email = row.user_email;
+    if (!memories[email]) memories[email] = [];
+    memories[email].push({
+      id: row.id,
+      user_email: row.user_email,
+      title: row.title,
+      content: row.content,
+      is_important: Boolean(row.is_important),
+      vault_type: row.vault_type,
+      timestamp: row.timestamp ? new Date(row.timestamp) : new Date(),
+      isFavorite: Boolean(row.isFavorite)
+    });
+  }
+
+  return {
+    data: {
+      users: users.map((row) => ({
+        id: row.id,
+        email: row.email,
+        password: row.password,
+        name: row.name || '',
+        personalPinHash: row.personalPinHash || undefined,
+        createdAt: row.createdAt ? new Date(row.createdAt) : new Date()
+      })),
+      memories
+    },
+    admin: {
+      activities: activitiesRows.map((row) => ({
+        id: row.id,
+        timestamp: row.timestamp ? new Date(row.timestamp).toISOString() : new Date().toISOString(),
+        action: row.action,
+        email: row.email,
+        userId: row.userId,
+        method: row.method,
+        path: row.path,
+        ip: row.ip,
+        details: row.details || {}
+      }))
+    }
+  };
+}
+
+async function persistDataToMongo() {
+  const data = normalizeData(dataCache);
+  await MongoUser.deleteMany({});
+  await MongoMemory.deleteMany({});
+
+  if (data.users.length > 0) {
+    await MongoUser.insertMany(
+      data.users.map((user) => ({
+        id: String(user.id),
+        email: String(user.email || ''),
+        password: String(user.password || ''),
+        name: user.name || '',
+        personalPinHash: user.personalPinHash || null,
+        createdAt: user.createdAt ? new Date(user.createdAt) : new Date()
+      }))
+    );
+  }
+
+  const memoryRows = Object.values(data.memories || {}).flat();
+  if (memoryRows.length > 0) {
+    await MongoMemory.insertMany(
+      memoryRows.map((memory) => ({
+        id: String(memory.id),
+        user_email: String(memory.user_email || ''),
+        title: memory.title || '',
+        content: memory.content || '',
+        is_important: Boolean(memory.is_important),
+        vault_type: memory.vault_type || '',
+        timestamp: memory.timestamp ? new Date(memory.timestamp) : new Date(),
+        isFavorite: Boolean(memory.isFavorite)
+      }))
+    );
+  }
+}
+
+async function persistAdminToMongo() {
+  const adminData = normalizeAdminData(adminCache);
+  const cappedActivities = adminData.activities.slice(-5000);
+  await MongoAdminActivity.deleteMany({});
+  if (cappedActivities.length === 0) return;
+
+  await MongoAdminActivity.insertMany(
+    cappedActivities.map((activity) => ({
+      id: String(activity.id),
+      timestamp: activity.timestamp ? new Date(activity.timestamp) : new Date(),
+      action: activity.action || '',
+      email: activity.email || null,
+      userId: activity.userId || null,
+      method: activity.method || '',
+      path: activity.path || '',
+      ip: activity.ip || '',
+      details: activity.details || {}
+    }))
+  );
 }
 
 async function createPgPool() {
@@ -309,6 +472,12 @@ async function persistAdminToPostgres() {
 
 function saveData(data) {
   dataCache = normalizeData(data);
+  if (storageMode === 'mongo' && mongoReady) {
+    enqueuePersist(async () => {
+      await persistDataToMongo();
+    });
+    return;
+  }
   if (storageMode === 'postgres' && pgPool) {
     enqueuePersist(async () => {
       await persistDataToPostgres();
@@ -320,6 +489,12 @@ function saveData(data) {
 
 function saveAdminData(data) {
   adminCache = normalizeAdminData(data);
+  if (storageMode === 'mongo' && mongoReady) {
+    enqueuePersist(async () => {
+      await persistAdminToMongo();
+    });
+    return;
+  }
   if (storageMode === 'postgres' && pgPool) {
     enqueuePersist(async () => {
       await persistAdminToPostgres();
@@ -332,6 +507,38 @@ function saveAdminData(data) {
 async function initializeStorage() {
   dataCache = normalizeData(readJsonData());
   adminCache = normalizeAdminData(readJsonAdminData());
+
+  if (MONGO_URI) {
+    try {
+      await connectDB();
+      ensureMongoModels();
+      mongoReady = true;
+
+      const loaded = await loadDataFromMongo();
+      const dbHasUsers = Array.isArray(loaded.data.users) && loaded.data.users.length > 0;
+      const dbHasMemories = Object.values(loaded.data.memories || {}).flat().length > 0;
+
+      if (!dbHasUsers && !dbHasMemories && (dataCache.users.length > 0 || Object.keys(dataCache.memories || {}).length > 0)) {
+        await persistDataToMongo();
+      } else {
+        dataCache = normalizeData(loaded.data);
+      }
+
+      if ((!loaded.admin.activities || loaded.admin.activities.length === 0) && adminCache.activities.length > 0) {
+        await persistAdminToMongo();
+      } else {
+        adminCache = normalizeAdminData(loaded.admin);
+      }
+
+      storageMode = 'mongo';
+      return;
+    } catch (error) {
+      console.error('Failed to initialize MongoDB storage, falling back to Postgres/JSON:', error.message);
+      mongoReady = false;
+      dataCache = normalizeData(readJsonData());
+      adminCache = normalizeAdminData(readJsonAdminData());
+    }
+  }
 
   if (!DATABASE_URL) {
     storageMode = 'json';
