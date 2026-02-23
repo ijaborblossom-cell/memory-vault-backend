@@ -53,6 +53,7 @@ const personalUnlockSessions = new Map();
 let storageMode = 'json';
 let pgPool = null;
 let mongoReady = false;
+let jsonWritable = true;
 let MongoUser = null;
 let MongoMemory = null;
 let MongoAdminActivity = null;
@@ -62,11 +63,26 @@ let persistQueue = Promise.resolve();
 let storageInitPromise = null;
 
 if (!fs.existsSync(dataFile)) {
-  fs.writeFileSync(dataFile, JSON.stringify({ users: [], memories: {} }, null, 2));
+  try {
+    fs.writeFileSync(dataFile, JSON.stringify({ users: [], memories: {} }, null, 2));
+  } catch {
+    jsonWritable = false;
+  }
 }
 
 if (!fs.existsSync(adminDataFile)) {
-  fs.writeFileSync(adminDataFile, JSON.stringify({ activities: [] }, null, 2));
+  try {
+    fs.writeFileSync(adminDataFile, JSON.stringify({ activities: [] }, null, 2));
+  } catch {
+    jsonWritable = false;
+  }
+}
+
+try {
+  fs.accessSync(dataFile, fs.constants.W_OK);
+  fs.accessSync(adminDataFile, fs.constants.W_OK);
+} catch {
+  jsonWritable = false;
 }
 
 function readJsonData() {
@@ -484,7 +500,9 @@ function saveData(data) {
     });
     return;
   }
-  fs.writeFileSync(dataFile, JSON.stringify(dataCache, null, 2));
+  if (jsonWritable) {
+    fs.writeFileSync(dataFile, JSON.stringify(dataCache, null, 2));
+  }
 }
 
 function saveAdminData(data) {
@@ -501,7 +519,9 @@ function saveAdminData(data) {
     });
     return;
   }
-  fs.writeFileSync(adminDataFile, JSON.stringify(adminCache, null, 2));
+  if (jsonWritable) {
+    fs.writeFileSync(adminDataFile, JSON.stringify(adminCache, null, 2));
+  }
 }
 
 async function initializeStorage() {

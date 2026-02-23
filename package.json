@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js"
+    "dev": "nodemon backend/server.js",
+    "vercel-build": "echo Vercel build override"
   },
   "keywords": [
     "memory",

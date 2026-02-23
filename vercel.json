@@ -1,12 +1,6 @@
 {
   "version": 2,
-  "functions": {
-    "api/index.js": { "runtime": "nodejs20.x" },
-    "api/auth/signup.js": { "runtime": "nodejs20.x" },
-    "api/auth/signin.js": { "runtime": "nodejs20.x" },
-    "api/memories/index.js": { "runtime": "nodejs20.x" },
-    "api/health.js": { "runtime": "nodejs20.x" }
-  },
+  "framework": null,
   "routes": [
     { "src": "/api/auth/signup", "dest": "/api/auth/signup.js" },
     { "src": "/api/auth/signin", "dest": "/api/auth/signin.js" },

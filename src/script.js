@@ -83,6 +83,7 @@ function resolveApiBaseUrl() {
 
   const raw = String(configured || '').trim();
   if (!raw) return `${window.location.origin}/api`;
+  if (/your-backend-domain/i.test(raw)) return `${window.location.origin}/api`;
 
   const withoutTrailingSlash = raw.replace(/\/+$/, '');
   // Accept both:
