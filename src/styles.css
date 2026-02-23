@@ -1535,10 +1535,18 @@ body.light-theme .ai-bot-message .message-content {
 body.light-theme .theme-toggle {
   background: rgba(255, 255, 255, 0.9);
   border-color: rgba(76, 175, 80, 0.35);
+  color: #1e4d6c;
 }
 
 body.light-theme .theme-toggle:hover {
   background: rgba(255, 255, 255, 0.98);
+  color: #163c55;
+}
+
+body.light-theme #main-page #mobile-theme-toggle {
+  color: #1e4d6c;
+  border-color: rgba(134, 173, 200, 0.4);
+  background: rgba(237, 246, 253, 0.95);
 }
 
 body.light-theme .search-input {

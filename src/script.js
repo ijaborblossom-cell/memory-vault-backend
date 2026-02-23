@@ -1675,6 +1675,13 @@ async function openAdminDashboard() {
 }
 
 function openAIAssistant() {
+  isLoggedIn = localStorage.getItem('user_logged_in') === 'true';
+  authToken = localStorage.getItem('auth_token') || '';
+  if (!isLoggedIn || !authToken) {
+    showMessage('Please sign in to use the AI Assistant', 'error');
+    showAuth();
+    return;
+  }
   closeMobileNavPanel();
   hideAllPages();
   document.getElementById('ai-page').classList.add('active');
@@ -1728,26 +1735,10 @@ document.getElementById('ai-form').addEventListener('submit', async (e) => {
   document.getElementById('ai-input').value = '';
   
   try {
-    // Call backend endpoint
-    console.log('Sending AI message:', input.substring(0, 50) + '...');
-    
-    const response = await fetch(`${API_BASE_URL}/ai/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify({ message: input })
-    });
-    
-    console.log('AI response status:', response.status);
-    
-    if (!response.ok) {
-      throw new Error(`Server error: ${response.status}`);
+    const data = await apiCall('/ai/chat', 'POST', { message: input });
+    if (!data || !data.success) {
+      throw new Error(data?.message || 'AI request failed');
     }
-    
-    const data = await response.json();
-    console.log('AI response data:', data);
     
     // Check if data contains an error message instead of a response
     if (data.error) {
