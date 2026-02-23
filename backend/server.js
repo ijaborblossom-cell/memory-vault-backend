@@ -11,13 +11,13 @@ require('dotenv').config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-const SECRET_KEY = process.env.JWT_SECRET || 'memory_vault_secret_key_2026';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
-const ADMIN_OWNER_EMAIL = (process.env.ADMIN_OWNER_EMAIL || '').toLowerCase();
+const SECRET_KEY = String(process.env.JWT_SECRET || 'memory_vault_secret_key_2026').trim();
+const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-4.1-mini').trim();
+const ADMIN_API_KEY = String(process.env.ADMIN_API_KEY || '').trim();
+const ADMIN_OWNER_EMAIL = String(process.env.ADMIN_OWNER_EMAIL || '').trim().toLowerCase();
 const PERSONAL_UNLOCK_TTL_MS = 15 * 60 * 1000;
-const DATABASE_URL = process.env.DATABASE_URL || '';
-const MONGO_URI = process.env.MONGO_URI || '';
+const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
+const MONGO_URI = String(process.env.MONGO_URI || '').trim();
 
 const allowedOriginList = (process.env.CORS_ORIGINS || process.env.FRONTEND_ORIGIN || '')
   .split(',')
@@ -54,6 +54,7 @@ let storageMode = 'json';
 let pgPool = null;
 let mongoReady = false;
 let jsonWritable = true;
+let storageInitLastError = '';
 let MongoUser = null;
 let MongoMemory = null;
 let MongoAdminActivity = null;
@@ -236,35 +237,40 @@ async function loadDataFromMongo() {
 
 async function persistDataToMongo() {
   const data = normalizeData(dataCache);
-  await MongoUser.deleteMany({});
-  await MongoMemory.deleteMany({});
-
-  if (data.users.length > 0) {
-    await MongoUser.insertMany(
-      data.users.map((user) => ({
-        id: String(user.id),
-        email: String(user.email || ''),
-        password: String(user.password || ''),
-        name: user.name || '',
-        personalPinHash: user.personalPinHash || null,
-        createdAt: user.createdAt ? new Date(user.createdAt) : new Date()
-      }))
+  for (const user of data.users) {
+    await MongoUser.updateOne(
+      { email: String(user.email || '') },
+      {
+        $set: {
+          id: String(user.id),
+          email: String(user.email || ''),
+          password: String(user.password || ''),
+          name: user.name || '',
+          personalPinHash: user.personalPinHash || null,
+          createdAt: user.createdAt ? new Date(user.createdAt) : new Date()
+        }
+      },
+      { upsert: true }
     );
   }
 
   const memoryRows = Object.values(data.memories || {}).flat();
-  if (memoryRows.length > 0) {
-    await MongoMemory.insertMany(
-      memoryRows.map((memory) => ({
-        id: String(memory.id),
-        user_email: String(memory.user_email || ''),
-        title: memory.title || '',
-        content: memory.content || '',
-        is_important: Boolean(memory.is_important),
-        vault_type: memory.vault_type || '',
-        timestamp: memory.timestamp ? new Date(memory.timestamp) : new Date(),
-        isFavorite: Boolean(memory.isFavorite)
-      }))
+  for (const memory of memoryRows) {
+    await MongoMemory.updateOne(
+      { id: String(memory.id) },
+      {
+        $set: {
+          id: String(memory.id),
+          user_email: String(memory.user_email || ''),
+          title: memory.title || '',
+          content: memory.content || '',
+          is_important: Boolean(memory.is_important),
+          vault_type: memory.vault_type || '',
+          timestamp: memory.timestamp ? new Date(memory.timestamp) : new Date(),
+          isFavorite: Boolean(memory.isFavorite)
+        }
+      },
+      { upsert: true }
     );
   }
 }
@@ -272,22 +278,25 @@ async function persistDataToMongo() {
 async function persistAdminToMongo() {
   const adminData = normalizeAdminData(adminCache);
   const cappedActivities = adminData.activities.slice(-5000);
-  await MongoAdminActivity.deleteMany({});
-  if (cappedActivities.length === 0) return;
-
-  await MongoAdminActivity.insertMany(
-    cappedActivities.map((activity) => ({
-      id: String(activity.id),
-      timestamp: activity.timestamp ? new Date(activity.timestamp) : new Date(),
-      action: activity.action || '',
-      email: activity.email || null,
-      userId: activity.userId || null,
-      method: activity.method || '',
-      path: activity.path || '',
-      ip: activity.ip || '',
-      details: activity.details || {}
-    }))
-  );
+  for (const activity of cappedActivities) {
+    await MongoAdminActivity.updateOne(
+      { id: String(activity.id) },
+      {
+        $set: {
+          id: String(activity.id),
+          timestamp: activity.timestamp ? new Date(activity.timestamp) : new Date(),
+          action: activity.action || '',
+          email: activity.email || null,
+          userId: activity.userId || null,
+          method: activity.method || '',
+          path: activity.path || '',
+          ip: activity.ip || '',
+          details: activity.details || {}
+        }
+      },
+      { upsert: true }
+    );
+  }
 }
 
 async function createPgPool() {
@@ -554,6 +563,7 @@ async function initializeStorage() {
       return;
     } catch (error) {
       console.error('Failed to initialize MongoDB storage, falling back to Postgres/JSON:', error.message);
+      storageInitLastError = `mongo: ${error.message}`;
       mongoReady = false;
       dataCache = normalizeData(readJsonData());
       adminCache = normalizeAdminData(readJsonAdminData());
@@ -592,6 +602,7 @@ async function initializeStorage() {
     storageMode = 'postgres';
   } catch (error) {
     console.error('Failed to initialize Postgres storage, falling back to JSON:', error.message);
+    storageInitLastError = `postgres: ${error.message}`;
     storageMode = 'json';
     pgPool = null;
     dataCache = normalizeData(readJsonData());
@@ -607,6 +618,22 @@ function ensureStorageInitialized() {
     });
   }
   return storageInitPromise;
+}
+
+async function ensureMongoReadyForRequest() {
+  if (!MONGO_URI) return false;
+  if (storageMode === 'mongo' && mongoReady) return true;
+  try {
+    await connectDB();
+    ensureMongoModels();
+    mongoReady = true;
+    storageMode = 'mongo';
+    storageInitLastError = '';
+    return true;
+  } catch (error) {
+    storageInitLastError = `mongo: ${error.message}`;
+    return false;
+  }
 }
 
 function getClientIp(req) {
@@ -722,11 +749,21 @@ function loadKnowledgeBase() {
 
 app.post('/api/auth/signup', async (req, res) => {
   try {
+    const mongoReadyForRequest = await ensureMongoReadyForRequest();
+    if (MONGO_URI && !mongoReadyForRequest) {
+      return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry.' });
+    }
     const { email, password, name } = req.body;
     const data = loadData();
 
     if (data.users.find((u) => u.email === email)) {
       return res.status(400).json({ success: false, message: 'User already exists' });
+    }
+    if (storageMode === 'mongo' && mongoReady && MongoUser) {
+      const existingMongo = await MongoUser.findOne({ email }).lean();
+      if (existingMongo) {
+        return res.status(400).json({ success: false, message: 'User already exists' });
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -737,6 +774,17 @@ app.post('/api/auth/signup', async (req, res) => {
       name,
       createdAt: new Date()
     };
+
+    if (storageMode === 'mongo' && mongoReady && MongoUser) {
+      await MongoUser.create({
+        id: String(user.id),
+        email: String(user.email),
+        password: String(user.password),
+        name: user.name || '',
+        personalPinHash: null,
+        createdAt: user.createdAt ? new Date(user.createdAt) : new Date()
+      });
+    }
 
     data.users.push(user);
     data.memories[email] = [];
@@ -758,17 +806,36 @@ app.post('/api/auth/signup', async (req, res) => {
 
 app.post('/api/auth/signin', async (req, res) => {
   try {
+    const mongoReadyForRequest = await ensureMongoReadyForRequest();
+    if (MONGO_URI && !mongoReadyForRequest) {
+      return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry.' });
+    }
     const { email, password } = req.body;
     const data = loadData();
 
-    const user = data.users.find((u) => u.email === email);
+    let user = null;
+    if (storageMode === 'mongo' && mongoReady && MongoUser) {
+      const mongoUser = await MongoUser.findOne({ email }).lean();
+      if (mongoUser) {
+        user = {
+          id: mongoUser.id,
+          email: mongoUser.email,
+          password: mongoUser.password,
+          name: mongoUser.name || '',
+          personalPinHash: mongoUser.personalPinHash || undefined,
+          createdAt: mongoUser.createdAt ? new Date(mongoUser.createdAt) : new Date()
+        };
+      }
+    } else {
+      user = data.users.find((u) => u.email === email);
+    }
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Invalid email or password' });
+      return res.status(401).json({ success: false, message: 'Invalid email or password', reason: 'user_not_found' });
     }
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
-      return res.status(401).json({ success: false, message: 'Invalid email or password' });
+      return res.status(401).json({ success: false, message: 'Invalid email or password', reason: 'password_mismatch' });
     }
 
     const token = jwt.sign({ email, id: user.id }, SECRET_KEY, { expiresIn: '7d' });
@@ -1479,7 +1546,7 @@ app.get('/api/debug/config', (req, res) => {
   res.json({
     success: true,
     server: 'Running',
-    environment: process.env.NODE_ENV || 'development',
+    environment: String(process.env.NODE_ENV || 'development').trim(),
     openai: {
       configured: hasApiKey,
       model: OPENAI_MODEL
@@ -1502,6 +1569,11 @@ app.get('/api/debug/config', (req, res) => {
       ownerConfigured: Boolean(ADMIN_OWNER_EMAIL),
       storageMode,
       storageFile: path.basename(adminDataFile)
+    },
+    database: {
+      mongoConfigured: Boolean(MONGO_URI),
+      postgresConfigured: Boolean(DATABASE_URL),
+      initError: storageInitLastError || null
     }
   });
 });
