@@ -4054,3 +4054,32 @@ select {
   z-index: 2;
   touch-action: manipulation;
 }
+
+/* ===== Light Theme Polish (Final Text Contrast) ===== */
+body.light-theme {
+  color: #1f2937;
+}
+
+body.light-theme .logo-text h1,
+body.light-theme .hero-title,
+body.light-theme .section-title,
+body.light-theme .vault-header-title,
+body.light-theme .memory-title {
+  color: #0f2f45 !important;
+  text-shadow: none !important;
+}
+
+body.light-theme .hero-subtitle,
+body.light-theme .section-subtitle,
+body.light-theme .vault-description,
+body.light-theme .memory-content,
+body.light-theme .memory-date,
+body.light-theme .ai-welcome-subtitle,
+body.light-theme .ai-bot-message p {
+  color: #334155 !important;
+}
+
+body.light-theme .nav-pill,
+body.light-theme .nav-pill-soft {
+  color: #1e4d6c !important;
+}

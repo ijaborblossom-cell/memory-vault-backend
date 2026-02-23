@@ -279,11 +279,21 @@ async function processRequestQueue() {
 }
 
 // Theme Management
-let isDarkTheme = localStorage.getItem('theme') !== 'light';
+function readStoredTheme() {
+  try {
+    return localStorage.getItem('theme');
+  } catch {
+    return null;
+  }
+}
+
+let isDarkTheme = readStoredTheme() !== 'light';
 
 function toggleTheme() {
   isDarkTheme = !isDarkTheme;
-  localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
+  try {
+    localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
+  } catch {}
   applyTheme();
 }
 
@@ -291,13 +301,21 @@ function applyTheme() {
   const themeToggle = document.getElementById('theme-toggle');
   const mobileThemeToggle = document.getElementById('mobile-theme-toggle');
   const body = document.body;
+  const currentTheme = readStoredTheme();
+  if (currentTheme === 'light') {
+    isDarkTheme = false;
+  } else if (currentTheme === 'dark') {
+    isDarkTheme = true;
+  }
   
   if (isDarkTheme) {
     body.classList.remove('light-theme');
+    body.setAttribute('data-theme', 'dark');
     if (themeToggle) themeToggle.textContent = 'Light';
     if (mobileThemeToggle) mobileThemeToggle.textContent = 'Light';
   } else {
     body.classList.add('light-theme');
+    body.setAttribute('data-theme', 'light');
     if (themeToggle) themeToggle.textContent = 'Dark';
     if (mobileThemeToggle) mobileThemeToggle.textContent = 'Dark';
   }
@@ -320,13 +338,8 @@ function closeMobileNavPanel() {
   btn.setAttribute('aria-expanded', 'false');
 }
 
-// Apply theme on page load
-setTimeout(() => {
+function initializeAppUi() {
   applyTheme();
-}, 100);
-
-// Update auth UI on page load
-setTimeout(() => {
   if (isLoggedIn) {
     userName = localStorage.getItem('user_name') || 'Friend';
     userEmail = localStorage.getItem('user_email') || '';
@@ -335,7 +348,18 @@ setTimeout(() => {
     refreshAdminAccess().then(updateAuthUI).catch(() => {});
   }
   updateAuthUI();
-}, 100);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeAppUi, { once: true });
+} else {
+  initializeAppUi();
+}
+
+// On mobile, bfcache/page restore can skip initial script timing.
+window.addEventListener('pageshow', () => {
+  applyTheme();
+});
 
 // Keep greeting accurate while the app remains open.
 setInterval(() => {
