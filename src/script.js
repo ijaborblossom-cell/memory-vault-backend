@@ -76,14 +76,24 @@ if (personalUnlockExpiresAt && Date.now() > personalUnlockExpiresAt) {
 
 // API BASE URL
 function resolveApiBaseUrl() {
+  const sameOriginApi = `${window.location.origin}/api`;
+  const onVercelHost = /\.vercel\.app$/i.test(window.location.hostname);
+  const allowExternalApi = window.MEMORY_VAULT_ALLOW_EXTERNAL_API === true;
+
   const configured =
     window.__API_BASE_URL ||
     window.MEMORY_VAULT_API_URL ||
-    `${window.location.origin}/api`;
+    sameOriginApi;
 
   const raw = String(configured || '').trim();
-  if (!raw) return `${window.location.origin}/api`;
-  if (/your-backend-domain/i.test(raw)) return `${window.location.origin}/api`;
+  if (!raw) return sameOriginApi;
+  if (/your-backend-domain/i.test(raw)) return sameOriginApi;
+
+  // On Vercel (including mobile browsers with stale cache), default to same-origin API
+  // unless external API usage is explicitly enabled.
+  if (onVercelHost && !allowExternalApi) {
+    return sameOriginApi;
+  }
 
   const withoutTrailingSlash = raw.replace(/\/+$/, '');
   // Accept both:
@@ -1665,8 +1675,13 @@ async function openAdminDashboard() {
 }
 
 function openAIAssistant() {
+  closeMobileNavPanel();
   hideAllPages();
   document.getElementById('ai-page').classList.add('active');
+  requestAnimationFrame(() => {
+    const input = document.getElementById('ai-input');
+    if (input) input.focus();
+  });
 }
 
 function closeAI() {
