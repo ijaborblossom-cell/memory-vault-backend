@@ -4083,3 +4083,21 @@ body.light-theme .nav-pill,
 body.light-theme .nav-pill-soft {
   color: #1e4d6c !important;
 }
+
+@media (max-width: 768px) {
+  body.light-theme #main-page .mobile-icon-btn,
+  body.light-theme #main-page #mobile-theme-toggle,
+  body.light-theme #main-page #mobile-menu-toggle,
+  body.light-theme #main-page .mobile-brand-text,
+  body.light-theme #main-page .mobile-panel-row .nav-btn,
+  body.light-theme #main-page .mobile-panel-user .nav-btn,
+  body.light-theme #main-page .nav-pill,
+  body.light-theme #main-page .nav-pill-soft {
+    color: #000000 !important;
+  }
+
+  body.light-theme #main-page .mobile-jumia-search .search-input,
+  body.light-theme #main-page .mobile-jumia-search .search-input::placeholder {
+    color: #111827 !important;
+  }
+}
