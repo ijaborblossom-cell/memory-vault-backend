@@ -992,6 +992,14 @@ html, body {
   display: block;
 }
 
+.auth-username-group {
+  display: none;
+}
+
+.auth-username-group.active {
+  display: block;
+}
+
 .auth-form-actions {
   justify-content: center;
 }

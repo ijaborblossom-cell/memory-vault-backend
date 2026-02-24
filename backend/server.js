@@ -50,6 +50,10 @@ const dataFile = path.join(__dirname, 'users.json');
 const knowledgeFile = path.join(__dirname, 'memory_vault_knowledge.json');
 const adminDataFile = path.join(__dirname, 'admin_activities.json');
 const personalUnlockSessions = new Map();
+const authAttemptTracker = new Map();
+const MAX_AUTH_ATTEMPTS = 6;
+const AUTH_WINDOW_MS = 10 * 60 * 1000;
+const AUTH_BLOCK_MS = 15 * 60 * 1000;
 let storageMode = 'json';
 let pgPool = null;
 let mongoReady = false;
@@ -62,6 +66,78 @@ let dataCache = { users: [], memories: {} };
 let adminCache = { activities: [] };
 let persistQueue = Promise.resolve();
 let storageInitPromise = null;
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isValidUsername(username) {
+  return /^[a-z0-9_]{3,20}$/.test(username);
+}
+
+function isStrongPassword(password) {
+  if (password.length < 8 || password.length > 128) return false;
+  return /[A-Za-z]/.test(password) && /\d/.test(password);
+}
+
+function getAuthKey(req, identifier) {
+  const ip = getClientIp(req);
+  return `${ip}:${String(identifier || '').toLowerCase()}`;
+}
+
+function authRateLimitStatus(req, identifier) {
+  const key = getAuthKey(req, identifier);
+  const now = Date.now();
+  const rec = authAttemptTracker.get(key);
+  if (!rec) return { blocked: false };
+  if (rec.blockedUntil && now < rec.blockedUntil) {
+    return { blocked: true, retryAfterMs: rec.blockedUntil - now };
+  }
+  if (now - rec.firstAttemptAt > AUTH_WINDOW_MS) {
+    authAttemptTracker.delete(key);
+    return { blocked: false };
+  }
+  return { blocked: false };
+}
+
+function recordAuthFailure(req, identifier) {
+  const key = getAuthKey(req, identifier);
+  const now = Date.now();
+  const rec = authAttemptTracker.get(key);
+  if (!rec || now - rec.firstAttemptAt > AUTH_WINDOW_MS) {
+    authAttemptTracker.set(key, {
+      firstAttemptAt: now,
+      attempts: 1,
+      blockedUntil: null
+    });
+    return;
+  }
+  rec.attempts += 1;
+  if (rec.attempts >= MAX_AUTH_ATTEMPTS) {
+    rec.blockedUntil = now + AUTH_BLOCK_MS;
+  }
+  authAttemptTracker.set(key, rec);
+}
+
+function clearAuthFailures(req, identifier) {
+  authAttemptTracker.delete(getAuthKey(req, identifier));
+}
 
 if (!fs.existsSync(dataFile)) {
   try {
@@ -110,6 +186,25 @@ function normalizeData(data) {
   const safe = data && typeof data === 'object' ? data : { users: [], memories: {} };
   if (!Array.isArray(safe.users)) safe.users = [];
   if (!safe.memories || typeof safe.memories !== 'object') safe.memories = {};
+  const seenUsernames = new Set();
+  safe.users = safe.users.map((u, index) => {
+    const email = normalizeEmail(u?.email);
+    const fallbackUsername = normalizeUsername(u?.username || u?.name || (email.split('@')[0] || 'user'));
+    const stableFallback = fallbackUsername || normalizeUsername(`user_${String(u?.id || '').slice(-6)}`) || 'user_default';
+    let uniqueUsername = stableFallback;
+    let attempt = 1;
+    while (seenUsernames.has(uniqueUsername)) {
+      uniqueUsername = `${stableFallback}_${attempt + index}`;
+      attempt += 1;
+    }
+    seenUsernames.add(uniqueUsername);
+    return {
+      ...u,
+      email,
+      username: uniqueUsername,
+      name: String(u?.name || u?.username || uniqueUsername || 'User').trim()
+    };
+  });
   return safe;
 }
 
@@ -144,6 +239,7 @@ function ensureMongoModels() {
     {
       id: { type: String, required: true, unique: true, index: true },
       email: { type: String, required: true, unique: true, index: true },
+      username: { type: String, default: null, unique: true, index: true, sparse: true },
       password: { type: String, required: true },
       name: { type: String, default: '' },
       personalPinHash: { type: String, default: null },
@@ -212,6 +308,7 @@ async function loadDataFromMongo() {
       users: users.map((row) => ({
         id: row.id,
         email: row.email,
+        username: normalizeUsername(row.username || row.name || String(row.email || '').split('@')[0]),
         password: row.password,
         name: row.name || '',
         personalPinHash: row.personalPinHash || undefined,
@@ -238,12 +335,15 @@ async function loadDataFromMongo() {
 async function persistDataToMongo() {
   const data = normalizeData(dataCache);
   for (const user of data.users) {
+    const email = String(user.email || '');
+    const username = normalizeUsername(user.username || user.name || email.split('@')[0] || 'user');
     await MongoUser.updateOne(
-      { email: String(user.email || '') },
+      { email },
       {
         $set: {
           id: String(user.id),
-          email: String(user.email || ''),
+          email,
+          username: String(username),
           password: String(user.password || ''),
           name: user.name || '',
           personalPinHash: user.personalPinHash || null,
@@ -753,16 +853,47 @@ app.post('/api/auth/signup', async (req, res) => {
     if (MONGO_URI && !mongoReadyForRequest) {
       return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry.' });
     }
-    const { email, password, name } = req.body;
+    const rawEmail = req.body?.email;
+    const rawPassword = req.body?.password;
+    const rawName = req.body?.name;
+    const rawUsername = req.body?.username;
+    const email = normalizeEmail(rawEmail);
+    const password = String(rawPassword || '');
+    const username = normalizeUsername(rawUsername);
+    const name = String(rawName || '').trim() || username;
     const data = loadData();
 
-    if (data.users.find((u) => u.email === email)) {
-      return res.status(400).json({ success: false, message: 'User already exists' });
+    if (!email || !password || !username) {
+      return res.status(400).json({ success: false, message: 'Email, username, and password are required' });
+    }
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ success: false, message: 'Enter a valid email address' });
+    }
+    if (!isValidUsername(username)) {
+      return res.status(400).json({ success: false, message: 'Username must be 3-20 characters (letters, numbers, underscore)' });
+    }
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters and include letters and numbers' });
+    }
+
+    const usernameInUse = data.users.find((u) => normalizeUsername(u.username || u.name) === username);
+    if (data.users.find((u) => normalizeEmail(u.email) === email)) {
+      return res.status(400).json({ success: false, message: 'Email is already registered' });
+    }
+    if (usernameInUse) {
+      return res.status(400).json({ success: false, message: 'Username is already taken' });
     }
     if (storageMode === 'mongo' && mongoReady && MongoUser) {
-      const existingMongo = await MongoUser.findOne({ email }).lean();
+      const existingMongo = await MongoUser.findOne({
+        $or: [{ email }, { username }]
+      }).lean();
       if (existingMongo) {
-        return res.status(400).json({ success: false, message: 'User already exists' });
+        return res.status(400).json({
+          success: false,
+          message: normalizeEmail(existingMongo.email) === email
+            ? 'Email is already registered'
+            : 'Username is already taken'
+        });
       }
     }
 
@@ -770,6 +901,7 @@ app.post('/api/auth/signup', async (req, res) => {
     const user = {
       id: Date.now().toString(),
       email,
+      username,
       password: hashedPassword,
       name,
       createdAt: new Date()
@@ -779,6 +911,7 @@ app.post('/api/auth/signup', async (req, res) => {
       await MongoUser.create({
         id: String(user.id),
         email: String(user.email),
+        username: String(user.username),
         password: String(user.password),
         name: user.name || '',
         personalPinHash: null,
@@ -790,14 +923,14 @@ app.post('/api/auth/signup', async (req, res) => {
     data.memories[email] = [];
     saveData(data);
 
-    const token = jwt.sign({ email, id: user.id }, SECRET_KEY, { expiresIn: '7d' });
+    const token = jwt.sign({ email, id: user.id, username }, SECRET_KEY, { expiresIn: '7d' });
 
     logActivity(req, 'auth_signup', { createdUserEmail: email });
     return res.json({
       success: true,
       message: 'Signup successful',
       token,
-      user: { email, name, id: user.id }
+      user: { email, username, name, id: user.id }
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -810,16 +943,31 @@ app.post('/api/auth/signin', async (req, res) => {
     if (MONGO_URI && !mongoReadyForRequest) {
       return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry.' });
     }
-    const { email, password } = req.body;
+    const identifierRaw = String(req.body?.identifier || req.body?.email || req.body?.username || '').trim();
+    const password = String(req.body?.password || '');
+    if (!identifierRaw || !password) {
+      return res.status(400).json({ success: false, message: 'Username/email and password are required' });
+    }
+    const identifier = identifierRaw.toLowerCase();
+    const limiter = authRateLimitStatus(req, identifier);
+    if (limiter.blocked) {
+      return res.status(429).json({ success: false, message: 'Too many failed attempts. Try again later.' });
+    }
     const data = loadData();
 
     let user = null;
     if (storageMode === 'mongo' && mongoReady && MongoUser) {
-      const mongoUser = await MongoUser.findOne({ email }).lean();
+      const mongoUser = await MongoUser.findOne({
+        $or: [
+          { email: normalizeEmail(identifier) },
+          { username: normalizeUsername(identifier) }
+        ]
+      }).lean();
       if (mongoUser) {
         user = {
           id: mongoUser.id,
           email: mongoUser.email,
+          username: mongoUser.username || '',
           password: mongoUser.password,
           name: mongoUser.name || '',
           personalPinHash: mongoUser.personalPinHash || undefined,
@@ -827,25 +975,32 @@ app.post('/api/auth/signin', async (req, res) => {
         };
       }
     } else {
-      user = data.users.find((u) => u.email === email);
+      user = data.users.find((u) => {
+        const emailMatch = normalizeEmail(u.email) === normalizeEmail(identifier);
+        const usernameMatch = normalizeUsername(u.username || u.name) === normalizeUsername(identifier);
+        return emailMatch || usernameMatch;
+      });
     }
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Invalid email or password', reason: 'user_not_found' });
+      recordAuthFailure(req, identifier);
+      return res.status(401).json({ success: false, message: 'Invalid username/email or password' });
     }
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
-      return res.status(401).json({ success: false, message: 'Invalid email or password', reason: 'password_mismatch' });
+      recordAuthFailure(req, identifier);
+      return res.status(401).json({ success: false, message: 'Invalid username/email or password' });
     }
 
-    const token = jwt.sign({ email, id: user.id }, SECRET_KEY, { expiresIn: '7d' });
+    clearAuthFailures(req, identifier);
+    const token = jwt.sign({ email: user.email, id: user.id, username: user.username || user.name || '' }, SECRET_KEY, { expiresIn: '7d' });
 
     logActivity(req, 'auth_signin');
     return res.json({
       success: true,
       message: 'Signin successful',
       token,
-      user: { email, name: user.name, id: user.id }
+      user: { email: user.email, username: user.username || user.name || '', name: user.name, id: user.id }
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

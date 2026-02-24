@@ -1381,6 +1381,9 @@ function openAuth(mode) {
   authMode = mode;
   hideAllPages();
   document.getElementById('auth-page').classList.add('active');
+  const identifierLabel = document.getElementById('auth-identifier-label');
+  const identifierInput = document.getElementById('auth-email');
+  const usernameGroup = document.getElementById('auth-username-group');
   
   if (mode === 'signin') {
     document.getElementById('auth-title').textContent = 'Sign In';
@@ -1389,6 +1392,9 @@ function openAuth(mode) {
     document.getElementById('auth-switch-text').textContent = "Don't have an account?";
     document.getElementById('auth-switch-btn-text').textContent = 'Sign Up';
     document.getElementById('auth-name-group').classList.remove('active');
+    if (usernameGroup) usernameGroup.classList.remove('active');
+    if (identifierLabel) identifierLabel.textContent = 'Email or Username';
+    if (identifierInput) identifierInput.placeholder = 'your@email.com or username';
   } else {
     document.getElementById('auth-title').textContent = 'Sign Up';
     document.getElementById('auth-subtitle').textContent = 'Create your memory vault account';
@@ -1396,6 +1402,9 @@ function openAuth(mode) {
     document.getElementById('auth-switch-text').textContent = 'Already have an account?';
     document.getElementById('auth-switch-btn-text').textContent = 'Sign In';
     document.getElementById('auth-name-group').classList.add('active');
+    if (usernameGroup) usernameGroup.classList.add('active');
+    if (identifierLabel) identifierLabel.textContent = 'Email';
+    if (identifierInput) identifierInput.placeholder = 'your@email.com';
   }
 
   const passwordInput = document.getElementById('auth-password');
@@ -1429,10 +1438,35 @@ function closeAuth() {
 document.getElementById('auth-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   
-  const email = document.getElementById('auth-email').value;
+  const identifier = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value;
-  const name = document.getElementById('auth-name').value;
+  const username = (document.getElementById('auth-username')?.value || '').trim().toLowerCase();
+  const name = document.getElementById('auth-name').value.trim();
   const msgDiv = document.getElementById('auth-message');
+
+  if (!identifier) {
+    msgDiv.innerHTML = '<div class="message error">Please enter your email or username.</div>';
+    return;
+  }
+  if (password.length < 8) {
+    msgDiv.innerHTML = '<div class="message error">Password must be at least 8 characters.</div>';
+    return;
+  }
+  if (authMode === 'signup') {
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier.toLowerCase());
+    if (!emailOk) {
+      msgDiv.innerHTML = '<div class="message error">Please enter a valid email address.</div>';
+      return;
+    }
+    if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+      msgDiv.innerHTML = '<div class="message error">Username must be 3-20 chars with letters, numbers, or underscore.</div>';
+      return;
+    }
+    if (!(/[A-Za-z]/.test(password) && /\d/.test(password))) {
+      msgDiv.innerHTML = '<div class="message error">Password must include both letters and numbers.</div>';
+      return;
+    }
+  }
   
   // Show loading state
   msgDiv.innerHTML = '<div class="message info">Processing...</div>';
@@ -1445,14 +1479,14 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
       response = await fetch(`${API_BASE_URL}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name })
+        body: JSON.stringify({ email: identifier, password, username, name })
       });
     } else {
       // Sign in with backend
       response = await fetch(`${API_BASE_URL}/auth/signin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ identifier, password })
       });
     }
     
@@ -1462,13 +1496,13 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
       // Store token and user info
       localStorage.setItem('auth_token', data.token);
       localStorage.setItem('user_email', data.user.email);
-      localStorage.setItem('user_name', data.user.name);
+      localStorage.setItem('user_name', data.user.name || data.user.username || 'Friend');
       localStorage.setItem('user_logged_in', 'true');
       
       // Update state
       authToken = data.token;
       userEmail = data.user.email;
-      userName = data.user.name;
+      userName = data.user.name || data.user.username || 'Friend';
       isLoggedIn = true;
       
       const mode = authMode === 'signup' ? 'created' : 'welcome back';
