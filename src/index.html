@@ -424,9 +424,20 @@
                 <button type="button" class="password-toggle-btn" id="auth-password-toggle" onclick="toggleAuthPasswordVisibility()" aria-label="Show password">Show</button>
               </div>
             </div>
+            <div class="form-group auth-reset-group" id="auth-reset-password-group">
+              <label class="form-label" for="auth-new-password">New Password</label>
+              <input type="password" id="auth-new-password" class="form-input" placeholder="Create new password">
+            </div>
+            <div class="form-group auth-reset-group" id="auth-reset-confirm-group">
+              <label class="form-label" for="auth-confirm-password">Confirm New Password</label>
+              <input type="password" id="auth-confirm-password" class="form-input" placeholder="Confirm new password">
+            </div>
             <div class="form-group auth-name-group" id="auth-name-group">
               <label class="form-label" for="auth-name">Display Name (Optional)</label>
               <input type="text" id="auth-name" class="form-input" placeholder="How your name appears">
+            </div>
+            <div class="auth-forgot-container" id="auth-forgot-container">
+              <button type="button" class="btn btn-secondary auth-forgot-btn" onclick="startForgotPasswordFlow()">Forgot Password?</button>
             </div>
             <div class="form-actions auth-form-actions">
               <button type="submit" class="btn btn-primary auth-submit-btn" id="auth-submit-btn">

@@ -1000,6 +1000,56 @@ html, body {
   display: block;
 }
 
+.auth-reset-group {
+  display: none;
+}
+
+.auth-reset-group.active {
+  display: block;
+}
+
+.auth-forgot-container {
+  display: none;
+  margin-top: -0.2rem;
+  margin-bottom: 0.4rem;
+}
+
+.auth-forgot-container.active {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.auth-forgot-btn {
+  min-height: 36px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.82rem;
+}
+
+.footer-content {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+}
+
+.footer-links {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.footer-link {
+  color: #8fd6ff;
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px dashed rgba(143, 214, 255, 0.5);
+}
+
+body.light-theme .footer-link {
+  color: #0f2f45;
+  border-bottom-color: rgba(15, 47, 69, 0.35);
+}
+
 .auth-form-actions {
   justify-content: center;
 }

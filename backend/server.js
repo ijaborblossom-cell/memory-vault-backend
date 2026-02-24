@@ -16,8 +16,10 @@ const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-4.1-mini').trim();
 const ADMIN_API_KEY = String(process.env.ADMIN_API_KEY || '').trim();
 const ADMIN_OWNER_EMAIL = String(process.env.ADMIN_OWNER_EMAIL || '').trim().toLowerCase();
 const PERSONAL_UNLOCK_TTL_MS = 15 * 60 * 1000;
+const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
 const MONGO_URI = String(process.env.MONGO_URI || '').trim();
+const APP_BASE_URL = String(process.env.APP_BASE_URL || process.env.FRONTEND_ORIGIN || '').trim();
 
 const allowedOriginList = (process.env.CORS_ORIGINS || process.env.FRONTEND_ORIGIN || '')
   .split(',')
@@ -139,6 +141,59 @@ function clearAuthFailures(req, identifier) {
   authAttemptTracker.delete(getAuthKey(req, identifier));
 }
 
+function createResetToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function hashResetToken(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+async function sendResetPasswordEmail(email, name, rawToken) {
+  const host = String(process.env.SMTP_HOST || '').trim();
+  const port = Number(process.env.SMTP_PORT || 587);
+  const secure = String(process.env.SMTP_SECURE || '').trim() === 'true';
+  const user = String(process.env.SMTP_USER || '').trim();
+  const pass = String(process.env.SMTP_PASS || '').trim();
+  const from = String(process.env.SMTP_FROM || user || '').trim();
+
+  if (!host || !user || !pass || !from) {
+    return false;
+  }
+
+  const base = (APP_BASE_URL || '').replace(/\/+$/, '');
+  const resetUrl = `${base || 'https://memory-vault-coral-seven.vercel.app'}?resetToken=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(email)}`;
+
+  try {
+    const nodemailer = require('nodemailer');
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass }
+    });
+
+    await transporter.sendMail({
+      from,
+      to: email,
+      subject: 'Memory Vault Password Reset',
+      text: [
+        `Hi ${name || 'there'},`,
+        '',
+        'We received a request to reset your Memory Vault password.',
+        `Reset link: ${resetUrl}`,
+        '',
+        'This link expires in 30 minutes.',
+        'If you did not request this, you can ignore this email.'
+      ].join('\n')
+    });
+    return true;
+  } catch (error) {
+    console.error('Reset email send failed:', error.message);
+    return false;
+  }
+}
+
 if (!fs.existsSync(dataFile)) {
   try {
     fs.writeFileSync(dataFile, JSON.stringify({ users: [], memories: {} }, null, 2));
@@ -202,7 +257,9 @@ function normalizeData(data) {
       ...u,
       email,
       username: uniqueUsername,
-      name: String(u?.name || u?.username || uniqueUsername || 'User').trim()
+      name: String(u?.name || u?.username || uniqueUsername || 'User').trim(),
+      resetPasswordTokenHash: u?.resetPasswordTokenHash || null,
+      resetPasswordExpiresAt: u?.resetPasswordExpiresAt || null
     };
   });
   return safe;
@@ -239,10 +296,12 @@ function ensureMongoModels() {
     {
       id: { type: String, required: true, unique: true, index: true },
       email: { type: String, required: true, unique: true, index: true },
-      username: { type: String, default: null, unique: true, index: true, sparse: true },
+      username: { type: String, default: undefined, unique: true, index: true, sparse: true },
       password: { type: String, required: true },
       name: { type: String, default: '' },
       personalPinHash: { type: String, default: null },
+      resetPasswordTokenHash: { type: String, default: null },
+      resetPasswordExpiresAt: { type: Date, default: null },
       createdAt: { type: Date, default: Date.now }
     },
     { collection: 'users', versionKey: false }
@@ -312,6 +371,8 @@ async function loadDataFromMongo() {
         password: row.password,
         name: row.name || '',
         personalPinHash: row.personalPinHash || undefined,
+        resetPasswordTokenHash: row.resetPasswordTokenHash || null,
+        resetPasswordExpiresAt: row.resetPasswordExpiresAt || null,
         createdAt: row.createdAt ? new Date(row.createdAt) : new Date()
       })),
       memories
@@ -347,6 +408,8 @@ async function persistDataToMongo() {
           password: String(user.password || ''),
           name: user.name || '',
           personalPinHash: user.personalPinHash || null,
+          resetPasswordTokenHash: user.resetPasswordTokenHash || null,
+          resetPasswordExpiresAt: user.resetPasswordExpiresAt ? new Date(user.resetPasswordExpiresAt) : null,
           createdAt: user.createdAt ? new Date(user.createdAt) : new Date()
         }
       },
@@ -877,8 +940,28 @@ app.post('/api/auth/signup', async (req, res) => {
     }
 
     const usernameInUse = data.users.find((u) => normalizeUsername(u.username || u.name) === username);
-    if (data.users.find((u) => normalizeEmail(u.email) === email)) {
-      return res.status(400).json({ success: false, message: 'Email is already registered' });
+    const existingByEmail = data.users.find((u) => normalizeEmail(u.email) === email);
+    if (existingByEmail) {
+      const existingPasswordOk = await bcrypt.compare(password, existingByEmail.password);
+      if (existingPasswordOk) {
+        const token = jwt.sign(
+          { email: existingByEmail.email, id: existingByEmail.id, username: existingByEmail.username || existingByEmail.name || '' },
+          SECRET_KEY,
+          { expiresIn: '7d' }
+        );
+        return res.json({
+          success: true,
+          message: 'Account already exists. Signed you in automatically.',
+          token,
+          user: {
+            email: existingByEmail.email,
+            username: existingByEmail.username || '',
+            name: existingByEmail.name || existingByEmail.username || '',
+            id: existingByEmail.id
+          }
+        });
+      }
+      return res.status(409).json({ success: false, message: 'Email is already registered. Sign in or use Forgot Password.' });
     }
     if (usernameInUse) {
       return res.status(400).json({ success: false, message: 'Username is already taken' });
@@ -888,10 +971,31 @@ app.post('/api/auth/signup', async (req, res) => {
         $or: [{ email }, { username }]
       }).lean();
       if (existingMongo) {
+        if (normalizeEmail(existingMongo.email) === email) {
+          const existingPasswordOk = await bcrypt.compare(password, existingMongo.password);
+          if (existingPasswordOk) {
+            const token = jwt.sign(
+              { email: existingMongo.email, id: existingMongo.id, username: existingMongo.username || existingMongo.name || '' },
+              SECRET_KEY,
+              { expiresIn: '7d' }
+            );
+            return res.json({
+              success: true,
+              message: 'Account already exists. Signed you in automatically.',
+              token,
+              user: {
+                email: existingMongo.email,
+                username: existingMongo.username || '',
+                name: existingMongo.name || existingMongo.username || '',
+                id: existingMongo.id
+              }
+            });
+          }
+        }
         return res.status(400).json({
           success: false,
           message: normalizeEmail(existingMongo.email) === email
-            ? 'Email is already registered'
+            ? 'Email is already registered. Sign in or use Forgot Password.'
             : 'Username is already taken'
         });
       }
@@ -1004,6 +1108,118 @@ app.post('/api/auth/signin', async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const genericResponse = {
+      success: true,
+      message: 'If this email is registered, a reset link has been sent.'
+    };
+    if (!email || !isValidEmail(email)) {
+      return res.json(genericResponse);
+    }
+
+    const data = loadData();
+    const user = data.users.find((u) => normalizeEmail(u.email) === email);
+    if (!user) {
+      return res.json(genericResponse);
+    }
+
+    const rawToken = createResetToken();
+    const tokenHash = hashResetToken(rawToken);
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+
+    user.resetPasswordTokenHash = tokenHash;
+    user.resetPasswordExpiresAt = expiresAt.toISOString();
+    saveData(data);
+
+    if (storageMode === 'mongo' && mongoReady && MongoUser) {
+      await MongoUser.updateOne(
+        { email },
+        { $set: { resetPasswordTokenHash: tokenHash, resetPasswordExpiresAt: expiresAt } }
+      );
+    }
+
+    await sendResetPasswordEmail(email, user.name || user.username || '', rawToken);
+    logActivity(req, 'auth_forgot_password', { email });
+    return res.json(genericResponse);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Unable to process forgot password request.' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const token = String(req.body?.token || '').trim();
+    const newPassword = String(req.body?.newPassword || '');
+    const confirmPassword = String(req.body?.confirmPassword || '');
+
+    if (!email || !token || !newPassword || !confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Email, token, and new passwords are required' });
+    }
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: 'New passwords do not match' });
+    }
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters and include letters and numbers' });
+    }
+
+    const data = loadData();
+    const user = data.users.find((u) => normalizeEmail(u.email) === email);
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset link' });
+    }
+
+    const now = Date.now();
+    const tokenHash = hashResetToken(token);
+    const expiresAtMs = user.resetPasswordExpiresAt ? new Date(user.resetPasswordExpiresAt).getTime() : 0;
+    const validToken = user.resetPasswordTokenHash && user.resetPasswordTokenHash === tokenHash && expiresAtMs > now;
+    if (!validToken) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset link' });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetPasswordTokenHash = null;
+    user.resetPasswordExpiresAt = null;
+    saveData(data);
+
+    if (storageMode === 'mongo' && mongoReady && MongoUser) {
+      await MongoUser.updateOne(
+        { email },
+        {
+          $set: {
+            password: user.password,
+            resetPasswordTokenHash: null,
+            resetPasswordExpiresAt: null
+          }
+        }
+      );
+    }
+
+    const tokenJwt = jwt.sign(
+      { email: user.email, id: user.id, username: user.username || user.name || '' },
+      SECRET_KEY,
+      { expiresIn: '7d' }
+    );
+
+    logActivity(req, 'auth_reset_password', { email });
+    return res.json({
+      success: true,
+      message: 'Password reset successful. You are now signed in.',
+      token: tokenJwt,
+      user: {
+        email: user.email,
+        username: user.username || '',
+        name: user.name || user.username || '',
+        id: user.id
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Unable to reset password right now.' });
   }
 });
 
@@ -1713,7 +1929,7 @@ app.get('/api/debug/config', (req, res) => {
     },
     endpoints: {
       health: '/api/health',
-      auth: ['/api/auth/signup', '/api/auth/signin'],
+      auth: ['/api/auth/signup', '/api/auth/signin', '/api/auth/forgot-password', '/api/auth/reset-password'],
       memories: '/api/memories',
       ai: '/api/ai/chat',
       personal: ['/api/personal/pin/status', '/api/personal/pin/setup', '/api/personal/pin/verify'],

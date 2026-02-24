@@ -35,7 +35,7 @@ let userName = localStorage.getItem('user_name') || 'Friend';
 let isSubmitting = false;
 let isDataSdkReady = false;
 let useLocalStorage = false;
-let authMode = 'signin'; // 'signin' or 'signup'
+let authMode = 'signin'; // 'signin' | 'signup' | 'reset'
 let isLoggedIn = localStorage.getItem('user_logged_in') === 'true';
 let userEmail = localStorage.getItem('user_email') || '';
 let authToken = localStorage.getItem('auth_token') || '';
@@ -338,7 +338,34 @@ function closeMobileNavPanel() {
   btn.setAttribute('aria-expanded', 'false');
 }
 
+function renderProfessionalFooters() {
+  const footers = document.querySelectorAll('.footer');
+  for (const footer of footers) {
+    footer.innerHTML = `
+      <div class="footer-content">
+        <p class="footer-text">© 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
+        <div class="footer-links">
+          <a class="footer-link" href="#" onclick="openAuth('signin'); return false;">Sign In</a>
+          <a class="footer-link" href="#" onclick="openAuth('signup'); return false;">Create Account</a>
+          <a class="footer-link" href="#" onclick="openAIAssistant(); return false;">AI Assistant</a>
+          <a class="footer-link" target="_blank" rel="noopener noreferrer" href="https://mail.google.com/mail/u/0/?fs=1&to=ijaborblossom@gmail.com&tf=cm">Need Guidance? Contact Support</a>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function openResetFromQueryIfNeeded() {
+  const params = new URLSearchParams(window.location.search);
+  const resetToken = params.get('resetToken');
+  const email = params.get('email');
+  if (!resetToken || !email) return;
+  sessionStorage.setItem('reset_token', resetToken);
+  openAuth('reset');
+}
+
 function initializeAppUi() {
+  renderProfessionalFooters();
   applyTheme();
   if (isLoggedIn) {
     userName = localStorage.getItem('user_name') || 'Friend';
@@ -360,6 +387,10 @@ if (document.readyState === 'loading') {
 window.addEventListener('pageshow', () => {
   applyTheme();
 });
+
+setTimeout(() => {
+  openResetFromQueryIfNeeded();
+}, 50);
 
 // Keep greeting accurate while the app remains open.
 setInterval(() => {
@@ -1384,27 +1415,66 @@ function openAuth(mode) {
   const identifierLabel = document.getElementById('auth-identifier-label');
   const identifierInput = document.getElementById('auth-email');
   const usernameGroup = document.getElementById('auth-username-group');
+  const nameGroup = document.getElementById('auth-name-group');
+  const forgotContainer = document.getElementById('auth-forgot-container');
+  const resetPasswordGroup = document.getElementById('auth-reset-password-group');
+  const resetConfirmGroup = document.getElementById('auth-reset-confirm-group');
+  const passwordFormGroup = document.getElementById('auth-password')?.closest('.form-group');
+  const switchText = document.getElementById('auth-switch-text');
+  const switchBtnText = document.getElementById('auth-switch-btn-text');
   
   if (mode === 'signin') {
     document.getElementById('auth-title').textContent = 'Sign In';
     document.getElementById('auth-subtitle').textContent = 'Access your memory vault';
     document.getElementById('auth-submit-text').textContent = 'Sign In';
-    document.getElementById('auth-switch-text').textContent = "Don't have an account?";
-    document.getElementById('auth-switch-btn-text').textContent = 'Sign Up';
-    document.getElementById('auth-name-group').classList.remove('active');
+    if (switchText) switchText.textContent = "Don't have an account?";
+    if (switchBtnText) switchBtnText.textContent = 'Sign Up';
+    if (nameGroup) nameGroup.classList.remove('active');
     if (usernameGroup) usernameGroup.classList.remove('active');
+    if (forgotContainer) forgotContainer.classList.add('active');
+    if (resetPasswordGroup) resetPasswordGroup.classList.remove('active');
+    if (resetConfirmGroup) resetConfirmGroup.classList.remove('active');
+    if (passwordFormGroup) passwordFormGroup.style.display = '';
     if (identifierLabel) identifierLabel.textContent = 'Email or Username';
     if (identifierInput) identifierInput.placeholder = 'your@email.com or username';
+    if (identifierInput) identifierInput.readOnly = false;
   } else {
-    document.getElementById('auth-title').textContent = 'Sign Up';
-    document.getElementById('auth-subtitle').textContent = 'Create your memory vault account';
-    document.getElementById('auth-submit-text').textContent = 'Create Account';
-    document.getElementById('auth-switch-text').textContent = 'Already have an account?';
-    document.getElementById('auth-switch-btn-text').textContent = 'Sign In';
-    document.getElementById('auth-name-group').classList.add('active');
-    if (usernameGroup) usernameGroup.classList.add('active');
-    if (identifierLabel) identifierLabel.textContent = 'Email';
-    if (identifierInput) identifierInput.placeholder = 'your@email.com';
+    if (mode === 'signup') {
+      document.getElementById('auth-title').textContent = 'Sign Up';
+      document.getElementById('auth-subtitle').textContent = 'Create your memory vault account';
+      document.getElementById('auth-submit-text').textContent = 'Create Account';
+      if (switchText) switchText.textContent = 'Already have an account?';
+      if (switchBtnText) switchBtnText.textContent = 'Sign In';
+      if (nameGroup) nameGroup.classList.add('active');
+      if (usernameGroup) usernameGroup.classList.add('active');
+      if (forgotContainer) forgotContainer.classList.remove('active');
+      if (resetPasswordGroup) resetPasswordGroup.classList.remove('active');
+      if (resetConfirmGroup) resetConfirmGroup.classList.remove('active');
+      if (passwordFormGroup) passwordFormGroup.style.display = '';
+      if (identifierLabel) identifierLabel.textContent = 'Email';
+      if (identifierInput) identifierInput.placeholder = 'your@email.com';
+      if (identifierInput) identifierInput.readOnly = false;
+    } else {
+      document.getElementById('auth-title').textContent = 'Reset Password';
+      document.getElementById('auth-subtitle').textContent = 'Set your new password and continue';
+      document.getElementById('auth-submit-text').textContent = 'Reset Password';
+      if (switchText) switchText.textContent = 'Remembered your password?';
+      if (switchBtnText) switchBtnText.textContent = 'Sign In';
+      if (nameGroup) nameGroup.classList.remove('active');
+      if (usernameGroup) usernameGroup.classList.remove('active');
+      if (forgotContainer) forgotContainer.classList.remove('active');
+      if (resetPasswordGroup) resetPasswordGroup.classList.add('active');
+      if (resetConfirmGroup) resetConfirmGroup.classList.add('active');
+      if (passwordFormGroup) passwordFormGroup.style.display = 'none';
+      if (identifierLabel) identifierLabel.textContent = 'Registered Email';
+      if (identifierInput) identifierInput.placeholder = 'your@email.com';
+      const urlParams = new URLSearchParams(window.location.search);
+      const resetEmail = (urlParams.get('email') || '').trim();
+      if (identifierInput && resetEmail) {
+        identifierInput.value = resetEmail;
+        identifierInput.readOnly = true;
+      }
+    }
   }
 
   const passwordInput = document.getElementById('auth-password');
@@ -1417,6 +1487,10 @@ function openAuth(mode) {
 }
 
 function toggleAuthMode() {
+  if (authMode === 'reset') {
+    openAuth('signin');
+    return;
+  }
   openAuth(authMode === 'signin' ? 'signup' : 'signin');
 }
 
@@ -1430,9 +1504,31 @@ function closeAuth() {
     passwordToggle.textContent = 'Show';
     passwordToggle.setAttribute('aria-label', 'Show password');
   }
+  sessionStorage.removeItem('reset_token');
+  const cleanUrl = `${window.location.origin}${window.location.pathname}`;
+  window.history.replaceState({}, '', cleanUrl);
   hideAllPages();
   document.getElementById('main-page').classList.add('active');
   closeMobileNavPanel();
+}
+
+async function startForgotPasswordFlow() {
+  const emailGuess = document.getElementById('auth-email')?.value?.trim() || '';
+  const email = prompt('Enter your registered email address:', emailGuess);
+  if (!email) return;
+  const msgDiv = document.getElementById('auth-message');
+  msgDiv.innerHTML = '<div class="message info">Sending reset link...</div>';
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim() })
+    });
+    const data = await parseJsonResponse(response, 'forgot-password');
+    msgDiv.innerHTML = `<div class="message success">${escapeHtml(data.message || 'If this email exists, a reset link has been sent.')}</div>`;
+  } catch (error) {
+    msgDiv.innerHTML = `<div class="message error">${escapeHtml(error.message || 'Unable to send reset link right now.')}</div>`;
+  }
 }
 
 document.getElementById('auth-form').addEventListener('submit', async (e) => {
@@ -1442,13 +1538,15 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
   const password = document.getElementById('auth-password').value;
   const username = (document.getElementById('auth-username')?.value || '').trim().toLowerCase();
   const name = document.getElementById('auth-name').value.trim();
+  const newPassword = (document.getElementById('auth-new-password')?.value || '').trim();
+  const confirmPassword = (document.getElementById('auth-confirm-password')?.value || '').trim();
   const msgDiv = document.getElementById('auth-message');
 
   if (!identifier) {
     msgDiv.innerHTML = '<div class="message error">Please enter your email or username.</div>';
     return;
   }
-  if (password.length < 8) {
+  if (authMode !== 'reset' && password.length < 8) {
     msgDiv.innerHTML = '<div class="message error">Password must be at least 8 characters.</div>';
     return;
   }
@@ -1467,6 +1565,20 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
       return;
     }
   }
+  if (authMode === 'reset') {
+    if (newPassword.length < 8) {
+      msgDiv.innerHTML = '<div class="message error">New password must be at least 8 characters.</div>';
+      return;
+    }
+    if (!(/[A-Za-z]/.test(newPassword) && /\d/.test(newPassword))) {
+      msgDiv.innerHTML = '<div class="message error">New password must include letters and numbers.</div>';
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      msgDiv.innerHTML = '<div class="message error">New passwords do not match.</div>';
+      return;
+    }
+  }
   
   // Show loading state
   msgDiv.innerHTML = '<div class="message info">Processing...</div>';
@@ -1481,12 +1593,24 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: identifier, password, username, name })
       });
-    } else {
+    } else if (authMode === 'signin') {
       // Sign in with backend
       response = await fetch(`${API_BASE_URL}/auth/signin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier, password })
+      });
+    } else {
+      const resetToken = sessionStorage.getItem('reset_token') || '';
+      response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: identifier,
+          token: resetToken,
+          newPassword,
+          confirmPassword
+        })
       });
     }
     
@@ -1504,9 +1628,8 @@ document.getElementById('auth-form').addEventListener('submit', async (e) => {
       userEmail = data.user.email;
       userName = data.user.name || data.user.username || 'Friend';
       isLoggedIn = true;
-      
-      const mode = authMode === 'signup' ? 'created' : 'welcome back';
-      msgDiv.innerHTML = `<div class="message success">Account ${mode} successfully.</div>`;
+      sessionStorage.removeItem('reset_token');
+      msgDiv.innerHTML = `<div class="message success">${escapeHtml(data.message || 'Authentication successful.')}</div>`;
       
       // Load memories from backend
       console.log('Loading memories from backend...');
