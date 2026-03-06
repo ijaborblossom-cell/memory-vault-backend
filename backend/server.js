@@ -7,7 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { connectDB } = require('./connectDB');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -15,6 +15,17 @@ const SECRET_KEY = String(process.env.JWT_SECRET || 'memory_vault_secret_key_202
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-4.1-mini').trim();
 const ADMIN_API_KEY = String(process.env.ADMIN_API_KEY || '').trim();
 const ADMIN_OWNER_EMAIL = String(process.env.ADMIN_OWNER_EMAIL || '').trim().toLowerCase();
+const GOOGLE_CLIENT_IDS = String(process.env.GOOGLE_CLIENT_ID || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+const FACEBOOK_APP_ID = String(process.env.FACEBOOK_APP_ID || '').trim();
+const FACEBOOK_APP_SECRET = String(process.env.FACEBOOK_APP_SECRET || '').trim();
+const MICROSOFT_CLIENT_IDS = String(process.env.MICROSOFT_CLIENT_ID || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+const ACTIVE_USER_WINDOW_MINUTES = Math.max(1, Math.min(1440, Number(process.env.ACTIVE_USER_WINDOW_MINUTES) || 5));
 const PERSONAL_UNLOCK_TTL_MS = 15 * 60 * 1000;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
@@ -46,12 +57,15 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'src')));
+const frontendDir = path.join(__dirname, '..', 'src');
+
+// Removed admin dashboard static route
+
+app.use(express.static(frontendDir));
 
 const dataFile = path.join(__dirname, 'users.json');
 const knowledgeFile = path.join(__dirname, 'memory_vault_knowledge.json');
 const adminDataFile = path.join(__dirname, 'admin_activities.json');
-const personalUnlockSessions = new Map();
 const authAttemptTracker = new Map();
 const MAX_AUTH_ATTEMPTS = 6;
 const AUTH_WINDOW_MS = 10 * 60 * 1000;
@@ -64,10 +78,13 @@ let storageInitLastError = '';
 let MongoUser = null;
 let MongoMemory = null;
 let MongoAdminActivity = null;
+let MongoFolder = null;
 let dataCache = { users: [], memories: {} };
 let adminCache = { activities: [] };
 let persistQueue = Promise.resolve();
 let storageInitPromise = null;
+let mongoNextRetryAt = 0;
+const MONGO_RETRY_COOLDOWN_MS = 5 * 60 * 1000;
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -82,7 +99,100 @@ function normalizeEmail(value) {
 }
 
 function normalizeUsername(value) {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function usernameBaseFromEmail(email) {
+  const localPart = String(email || '').split('@')[0] || 'user';
+  const normalized = normalizeUsername(localPart);
+  if (normalized.length >= 3) return normalized.slice(0, 20);
+  return 'user';
+}
+
+function buildUsernameBase(rawUsername, email) {
+  const fromInput = normalizeUsername(rawUsername);
+  const fromEmail = usernameBaseFromEmail(email);
+  let base = fromInput || fromEmail || 'user';
+  if (base.length < 3) base = `${base}user`;
+  return base.slice(0, 20);
+}
+
+function generateUniqueUsername(baseUsername, existingUsernames) {
+  const taken = existingUsernames instanceof Set ? existingUsernames : new Set();
+  const base = buildUsernameBase(baseUsername, '');
+  if (!taken.has(base) && isValidUsername(base)) {
+    return base;
+  }
+
+  let suffix = 2;
+  while (suffix < 5000) {
+    const suffixText = `_${suffix}`;
+    const trimmed = base.slice(0, Math.max(3, 20 - suffixText.length));
+    const candidate = `${trimmed}${suffixText}`;
+    if (!taken.has(candidate) && isValidUsername(candidate)) {
+      return candidate;
+    }
+    suffix += 1;
+  }
+
+  return `user_${Date.now().toString().slice(-6)}`;
+}
+
+function isLikelySyntheticEmail(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized || !normalized.includes('@')) return false;
+  const parts = normalized.split('@');
+  if (parts.length !== 2) return false;
+  const local = parts[0];
+  const domain = parts[1];
+
+  const syntheticDomains = new Set(['example.com', 'example.org', 'example.net', 'test.com']);
+  if (syntheticDomains.has(domain)) return true;
+
+  const syntheticLocalPrefixes = [
+    'ai-test-',
+    'fallback-help-',
+    'policycheck_',
+    'newuser_',
+    'delcheck_',
+    'delpersonal_',
+    'rendercheck_'
+  ];
+  return syntheticLocalPrefixes.some((prefix) => local.startsWith(prefix));
+}
+
+function isLikelySyntheticUser(user) {
+  const email = normalizeEmail(user?.email);
+  return isLikelySyntheticEmail(email);
+}
+
+function isRealOnlyQueryEnabled(value) {
+  const normalized = String(value == null ? '1' : value).trim().toLowerCase();
+  return !['0', 'false', 'no', 'off'].includes(normalized);
+}
+
+function buildSyntheticEmailSet(users) {
+  return new Set(
+    (Array.isArray(users) ? users : [])
+      .filter((user) => isLikelySyntheticUser(user))
+      .map((user) => normalizeEmail(user?.email))
+      .filter(Boolean)
+  );
+}
+
+function isLikelySyntheticActivity(activity, syntheticEmails) {
+  const email = normalizeEmail(activity?.email);
+  if (email && syntheticEmails.has(email)) return true;
+
+  const createdUserEmail = normalizeEmail(activity?.details?.createdUserEmail);
+  if (createdUserEmail && isLikelySyntheticEmail(createdUserEmail)) return true;
+
+  return false;
 }
 
 function isValidEmail(email) {
@@ -96,6 +206,184 @@ function isValidUsername(username) {
 function isStrongPassword(password) {
   if (password.length < 8 || password.length > 128) return false;
   return /[A-Za-z]/.test(password) && /\d/.test(password);
+}
+
+function decodeJwtPayload(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length < 2) return null;
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = `${base64}${'='.repeat((4 - (base64.length % 4)) % 4)}`;
+    const decoded = Buffer.from(padded, 'base64').toString('utf8');
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
+
+async function verifyGoogleOAuthToken(payload) {
+  const idToken = String(payload?.idToken || '').trim();
+  if (idToken) {
+    const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(10000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error_description || data?.error || 'Unable to verify Google token.');
+    }
+
+    const aud = String(data.aud || '').trim();
+    if (GOOGLE_CLIENT_IDS.length > 0 && !GOOGLE_CLIENT_IDS.includes(aud)) {
+      throw new Error('Google token audience mismatch.');
+    }
+
+    const email = normalizeEmail(data.email);
+    const verified = String(data.email_verified || '').toLowerCase() === 'true';
+    if (!email || !verified) {
+      throw new Error('Google account email is missing or not verified.');
+    }
+
+    return {
+      provider: 'google',
+      providerUserId: String(data.sub || ''),
+      email,
+      name: String(data.name || data.given_name || email.split('@')[0] || '').trim()
+    };
+  }
+
+  const accessToken = String(payload?.accessToken || '').trim();
+  if (!accessToken) {
+    throw new Error('Google sign-in requires an ID token or access token.');
+  }
+
+  const userInfoResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(10000)
+  });
+  const userInfo = await userInfoResponse.json().catch(() => ({}));
+  if (!userInfoResponse.ok) {
+    throw new Error(userInfo?.error_description || userInfo?.error || 'Unable to verify Google access token.');
+  }
+
+  const tokenInfoResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`, {
+    method: 'GET',
+    signal: AbortSignal.timeout(10000)
+  });
+  const tokenInfo = await tokenInfoResponse.json().catch(() => ({}));
+  if (tokenInfoResponse.ok) {
+    const aud = String(tokenInfo.aud || tokenInfo.azp || '').trim();
+    if (GOOGLE_CLIENT_IDS.length > 0 && aud && !GOOGLE_CLIENT_IDS.includes(aud)) {
+      throw new Error('Google token audience mismatch.');
+    }
+  }
+
+  const email = normalizeEmail(userInfo.email);
+  const verified = Boolean(userInfo.email_verified);
+  if (!email || !verified) {
+    throw new Error('Google account email is missing or not verified.');
+  }
+
+  return {
+    provider: 'google',
+    providerUserId: String(userInfo.sub || ''),
+    email,
+    name: String(userInfo.name || userInfo.given_name || email.split('@')[0] || '').trim()
+  };
+}
+
+async function verifyFacebookOAuthToken(payload) {
+  const accessToken = String(payload?.accessToken || '').trim();
+  if (!accessToken) {
+    throw new Error('Facebook sign-in requires an access token.');
+  }
+  if (!FACEBOOK_APP_ID || !FACEBOOK_APP_SECRET) {
+    throw new Error('Facebook OAuth is not configured on the server.');
+  }
+
+  const appToken = `${FACEBOOK_APP_ID}|${FACEBOOK_APP_SECRET}`;
+  const debugResponse = await fetch(
+    `https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(appToken)}`,
+    { method: 'GET', signal: AbortSignal.timeout(10000) }
+  );
+  const debugData = await debugResponse.json().catch(() => ({}));
+  const tokenData = debugData?.data || {};
+  if (!debugResponse.ok || !tokenData.is_valid) {
+    throw new Error('Facebook access token is invalid.');
+  }
+  if (String(tokenData.app_id || '') !== FACEBOOK_APP_ID) {
+    throw new Error('Facebook token app mismatch.');
+  }
+
+  const meResponse = await fetch(
+    `https://graph.facebook.com/me?fields=id,name,email&access_token=${encodeURIComponent(accessToken)}`,
+    { method: 'GET', signal: AbortSignal.timeout(10000) }
+  );
+  const meData = await meResponse.json().catch(() => ({}));
+  if (!meResponse.ok) {
+    throw new Error(meData?.error?.message || 'Unable to read Facebook profile.');
+  }
+
+  const email = normalizeEmail(meData.email);
+  if (!email) {
+    throw new Error('Facebook account did not provide an email. Ensure email permission is approved.');
+  }
+
+  return {
+    provider: 'facebook',
+    providerUserId: String(meData.id || tokenData.user_id || ''),
+    email,
+    name: String(meData.name || email.split('@')[0] || '').trim()
+  };
+}
+
+async function verifyMicrosoftOAuthToken(payload) {
+  const accessToken = String(payload?.accessToken || '').trim();
+  if (!accessToken) {
+    throw new Error('Microsoft sign-in requires an access token.');
+  }
+
+  const decoded = decodeJwtPayload(accessToken);
+  const audience = String(decoded?.aud || '').trim();
+  const acceptedAudiences = new Set([
+    ...MICROSOFT_CLIENT_IDS,
+    '00000003-0000-0000-c000-000000000000',
+    'https://graph.microsoft.com'
+  ]);
+  if (MICROSOFT_CLIENT_IDS.length > 0 && audience && !acceptedAudiences.has(audience)) {
+    throw new Error('Microsoft token audience mismatch.');
+  }
+
+  const meResponse = await fetch('https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(10000)
+  });
+  const meData = await meResponse.json().catch(() => ({}));
+  if (!meResponse.ok) {
+    throw new Error(meData?.error?.message || 'Unable to verify Microsoft token.');
+  }
+
+  const email = normalizeEmail(meData.mail || meData.userPrincipalName);
+  if (!email) {
+    throw new Error('Microsoft account email is missing.');
+  }
+
+  return {
+    provider: 'microsoft',
+    providerUserId: String(meData.id || decoded?.oid || decoded?.sub || ''),
+    email,
+    name: String(meData.displayName || email.split('@')[0] || '').trim()
+  };
+}
+
+async function verifySocialIdentity(provider, payload) {
+  const normalizedProvider = String(provider || '').trim().toLowerCase();
+  if (normalizedProvider === 'google') return verifyGoogleOAuthToken(payload);
+  if (normalizedProvider === 'facebook') return verifyFacebookOAuthToken(payload);
+  if (normalizedProvider === 'microsoft') return verifyMicrosoftOAuthToken(payload);
+  throw new Error('Unsupported social provider.');
 }
 
 function getAuthKey(req, identifier) {
@@ -238,9 +526,10 @@ function readJsonAdminData() {
 }
 
 function normalizeData(data) {
-  const safe = data && typeof data === 'object' ? data : { users: [], memories: {} };
+  const safe = data && typeof data === 'object' ? data : { users: [], memories: {}, folders: {} };
   if (!Array.isArray(safe.users)) safe.users = [];
   if (!safe.memories || typeof safe.memories !== 'object') safe.memories = {};
+  if (!safe.folders || typeof safe.folders !== 'object') safe.folders = {};
   const seenUsernames = new Set();
   safe.users = safe.users.map((u, index) => {
     const email = normalizeEmail(u?.email);
@@ -258,10 +547,43 @@ function normalizeData(data) {
       email,
       username: uniqueUsername,
       name: String(u?.name || u?.username || uniqueUsername || 'User').trim(),
+      pinFailedAttempts: Math.max(0, Number(u?.pinFailedAttempts) || 0),
+      pinLockedUntil: u?.pinLockedUntil ? new Date(u.pinLockedUntil).toISOString() : null,
+      pinLockCycles: Math.max(0, Number(u?.pinLockCycles) || 0),
       resetPasswordTokenHash: u?.resetPasswordTokenHash || null,
       resetPasswordExpiresAt: u?.resetPasswordExpiresAt || null
     };
   });
+
+  for (const user of safe.users) {
+    const email = normalizeEmail(user?.email);
+    if (!email) continue;
+    if (!Array.isArray(safe.memories[email])) safe.memories[email] = [];
+    if (!Array.isArray(safe.folders[email])) safe.folders[email] = [];
+
+    safe.folders[email] = safe.folders[email]
+      .map((folder) => ({
+        id: String(folder?.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+        name: String(folder?.name || 'Untitled Folder').trim().slice(0, 80) || 'Untitled Folder',
+        parentId: folder?.parentId ? String(folder.parentId) : null,
+        createdAt: folder?.createdAt ? new Date(folder.createdAt).toISOString() : new Date().toISOString()
+      }))
+      .filter((folder) => Boolean(folder.id));
+
+    safe.memories[email] = safe.memories[email].map((memory) => {
+      const isImportant = Boolean(memory?.is_important);
+      const interval = Math.max(1, Math.min(30, Number(memory?.review_interval_days) || 3));
+      return {
+        ...memory,
+        folder_id: memory?.folder_id ? String(memory.folder_id) : null,
+        review_interval_days: interval,
+        last_reviewed_at: memory?.last_reviewed_at ? new Date(memory.last_reviewed_at).toISOString() : null,
+        next_review_at: isImportant
+          ? (memory?.next_review_at ? new Date(memory.next_review_at).toISOString() : new Date(Date.now() + interval * 86400000).toISOString())
+          : null
+      };
+    });
+  }
   return safe;
 }
 
@@ -300,6 +622,9 @@ function ensureMongoModels() {
       password: { type: String, required: true },
       name: { type: String, default: '' },
       personalPinHash: { type: String, default: null },
+      pinFailedAttempts: { type: Number, default: 0 },
+      pinLockedUntil: { type: Date, default: null },
+      pinLockCycles: { type: Number, default: 0 },
       resetPasswordTokenHash: { type: String, default: null },
       resetPasswordExpiresAt: { type: Date, default: null },
       createdAt: { type: Date, default: Date.now }
@@ -315,10 +640,25 @@ function ensureMongoModels() {
       content: { type: String, default: '' },
       is_important: { type: Boolean, default: false },
       vault_type: { type: String, default: '' },
+      folder_id: { type: String, default: null, index: true },
+      review_interval_days: { type: Number, default: 3 },
+      last_reviewed_at: { type: Date, default: null },
+      next_review_at: { type: Date, default: null, index: true },
       timestamp: { type: Date, default: Date.now },
       isFavorite: { type: Boolean, default: false }
     },
     { collection: 'memories', versionKey: false }
+  );
+
+  const folderSchema = new mongoose.Schema(
+    {
+      id: { type: String, required: true, unique: true, index: true },
+      user_email: { type: String, required: true, index: true },
+      name: { type: String, default: '' },
+      parent_id: { type: String, default: null, index: true },
+      created_at: { type: Date, default: Date.now }
+    },
+    { collection: 'folders', versionKey: false }
   );
 
   const adminActivitySchema = new mongoose.Schema(
@@ -339,14 +679,17 @@ function ensureMongoModels() {
   MongoUser = mongoose.models.MemoryVaultUser || mongoose.model('MemoryVaultUser', userSchema);
   MongoMemory = mongoose.models.MemoryVaultMemory || mongoose.model('MemoryVaultMemory', memorySchema);
   MongoAdminActivity = mongoose.models.MemoryVaultAdminActivity || mongoose.model('MemoryVaultAdminActivity', adminActivitySchema);
+  MongoFolder = mongoose.models.MemoryVaultFolder || mongoose.model('MemoryVaultFolder', folderSchema);
 }
 
 async function loadDataFromMongo() {
   const users = await MongoUser.find({}).sort({ createdAt: 1, id: 1 }).lean();
   const memoriesRows = await MongoMemory.find({}).sort({ timestamp: -1, id: -1 }).lean();
+  const foldersRows = await MongoFolder.find({}).sort({ created_at: 1, id: 1 }).lean();
   const activitiesRows = await MongoAdminActivity.find({}).sort({ timestamp: -1, id: -1 }).limit(5000).lean();
 
   const memories = {};
+  const folders = {};
   for (const row of memoriesRows) {
     const email = row.user_email;
     if (!memories[email]) memories[email] = [];
@@ -357,8 +700,22 @@ async function loadDataFromMongo() {
       content: row.content,
       is_important: Boolean(row.is_important),
       vault_type: row.vault_type,
+      folder_id: row.folder_id || null,
+      review_interval_days: Math.max(1, Math.min(30, Number(row.review_interval_days) || 3)),
+      last_reviewed_at: row.last_reviewed_at ? new Date(row.last_reviewed_at) : null,
+      next_review_at: row.next_review_at ? new Date(row.next_review_at) : null,
       timestamp: row.timestamp ? new Date(row.timestamp) : new Date(),
       isFavorite: Boolean(row.isFavorite)
+    });
+  }
+  for (const row of foldersRows) {
+    const email = row.user_email;
+    if (!folders[email]) folders[email] = [];
+    folders[email].push({
+      id: row.id,
+      name: row.name || 'Untitled Folder',
+      parentId: row.parent_id || null,
+      createdAt: row.created_at ? new Date(row.created_at) : new Date()
     });
   }
 
@@ -371,11 +728,15 @@ async function loadDataFromMongo() {
         password: row.password,
         name: row.name || '',
         personalPinHash: row.personalPinHash || undefined,
+        pinFailedAttempts: Math.max(0, Number(row.pinFailedAttempts) || 0),
+        pinLockedUntil: row.pinLockedUntil ? new Date(row.pinLockedUntil) : null,
+        pinLockCycles: Math.max(0, Number(row.pinLockCycles) || 0),
         resetPasswordTokenHash: row.resetPasswordTokenHash || null,
         resetPasswordExpiresAt: row.resetPasswordExpiresAt || null,
         createdAt: row.createdAt ? new Date(row.createdAt) : new Date()
       })),
-      memories
+      memories,
+      folders
     },
     admin: {
       activities: activitiesRows.map((row) => ({
@@ -394,7 +755,7 @@ async function loadDataFromMongo() {
 }
 
 async function persistDataToMongo() {
-  const data = normalizeData(dataCache);
+  const data = dataCache;
   for (const user of data.users) {
     const email = String(user.email || '');
     const username = normalizeUsername(user.username || user.name || email.split('@')[0] || 'user');
@@ -408,6 +769,9 @@ async function persistDataToMongo() {
           password: String(user.password || ''),
           name: user.name || '',
           personalPinHash: user.personalPinHash || null,
+          pinFailedAttempts: Math.max(0, Number(user.pinFailedAttempts) || 0),
+          pinLockedUntil: user.pinLockedUntil ? new Date(user.pinLockedUntil) : null,
+          pinLockCycles: Math.max(0, Number(user.pinLockCycles) || 0),
           resetPasswordTokenHash: user.resetPasswordTokenHash || null,
           resetPasswordExpiresAt: user.resetPasswordExpiresAt ? new Date(user.resetPasswordExpiresAt) : null,
           createdAt: user.createdAt ? new Date(user.createdAt) : new Date()
@@ -429,8 +793,31 @@ async function persistDataToMongo() {
           content: memory.content || '',
           is_important: Boolean(memory.is_important),
           vault_type: memory.vault_type || '',
+          folder_id: memory.folder_id || null,
+          review_interval_days: Math.max(1, Math.min(30, Number(memory.review_interval_days) || 3)),
+          last_reviewed_at: memory.last_reviewed_at ? new Date(memory.last_reviewed_at) : null,
+          next_review_at: memory.next_review_at ? new Date(memory.next_review_at) : null,
           timestamp: memory.timestamp ? new Date(memory.timestamp) : new Date(),
           isFavorite: Boolean(memory.isFavorite)
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  const folderRows = Object.entries(data.folders || {})
+    .flatMap(([email, folders]) => (Array.isArray(folders) ? folders.map((f) => ({ email, folder: f })) : []));
+  for (const item of folderRows) {
+    const folder = item.folder || {};
+    await MongoFolder.updateOne(
+      { id: String(folder.id) },
+      {
+        $set: {
+          id: String(folder.id),
+          user_email: String(item.email || ''),
+          name: String(folder.name || 'Untitled Folder'),
+          parent_id: folder.parentId ? String(folder.parentId) : null,
+          created_at: folder.createdAt ? new Date(folder.createdAt) : new Date()
         }
       },
       { upsert: true }
@@ -484,6 +871,9 @@ async function ensurePgSchema() {
       password TEXT NOT NULL,
       name TEXT,
       personal_pin_hash TEXT,
+      pin_failed_attempts INTEGER DEFAULT 0,
+      pin_locked_until TIMESTAMPTZ,
+      pin_lock_cycles INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ
     );
   `);
@@ -495,8 +885,21 @@ async function ensurePgSchema() {
       content TEXT,
       is_important BOOLEAN DEFAULT FALSE,
       vault_type TEXT,
+      folder_id TEXT,
+      review_interval_days INTEGER DEFAULT 3,
+      last_reviewed_at TIMESTAMPTZ,
+      next_review_at TIMESTAMPTZ,
       timestamp TIMESTAMPTZ,
       is_favorite BOOLEAN DEFAULT FALSE
+    );
+  `);
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS folders (
+      id TEXT PRIMARY KEY,
+      user_email TEXT NOT NULL,
+      name TEXT,
+      parent_id TEXT,
+      created_at TIMESTAMPTZ
     );
   `);
   await pgPool.query(`
@@ -512,18 +915,30 @@ async function ensurePgSchema() {
       details JSONB
     );
   `);
+  await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_failed_attempts INTEGER DEFAULT 0;`);
+  await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_locked_until TIMESTAMPTZ;`);
+  await pgPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_lock_cycles INTEGER DEFAULT 0;`);
+  await pgPool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS folder_id TEXT;`);
+  await pgPool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS review_interval_days INTEGER DEFAULT 3;`);
+  await pgPool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMPTZ;`);
+  await pgPool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS next_review_at TIMESTAMPTZ;`);
 }
 
 async function loadDataFromPostgres() {
   const usersResult = await pgPool.query(`
-    SELECT id, email, password, name, personal_pin_hash, created_at
+    SELECT id, email, password, name, personal_pin_hash, pin_failed_attempts, pin_locked_until, pin_lock_cycles, created_at
     FROM users
     ORDER BY created_at ASC NULLS LAST, id ASC
   `);
   const memoriesResult = await pgPool.query(`
-    SELECT id, user_email, title, content, is_important, vault_type, timestamp, is_favorite
+    SELECT id, user_email, title, content, is_important, vault_type, folder_id, review_interval_days, last_reviewed_at, next_review_at, timestamp, is_favorite
     FROM memories
     ORDER BY timestamp DESC NULLS LAST, id DESC
+  `);
+  const foldersResult = await pgPool.query(`
+    SELECT id, user_email, name, parent_id, created_at
+    FROM folders
+    ORDER BY created_at ASC NULLS LAST, id ASC
   `);
   const activitiesResult = await pgPool.query(`
     SELECT id, timestamp, action, email, user_id, method, path, ip, details
@@ -533,6 +948,7 @@ async function loadDataFromPostgres() {
   `);
 
   const memories = {};
+  const folders = {};
   for (const row of memoriesResult.rows) {
     const email = row.user_email;
     if (!memories[email]) memories[email] = [];
@@ -543,8 +959,22 @@ async function loadDataFromPostgres() {
       content: row.content,
       is_important: Boolean(row.is_important),
       vault_type: row.vault_type,
+      folder_id: row.folder_id || null,
+      review_interval_days: Math.max(1, Math.min(30, Number(row.review_interval_days) || 3)),
+      last_reviewed_at: row.last_reviewed_at ? new Date(row.last_reviewed_at) : null,
+      next_review_at: row.next_review_at ? new Date(row.next_review_at) : null,
       timestamp: row.timestamp ? new Date(row.timestamp) : new Date(),
       isFavorite: Boolean(row.is_favorite)
+    });
+  }
+  for (const row of foldersResult.rows) {
+    const email = row.user_email;
+    if (!folders[email]) folders[email] = [];
+    folders[email].push({
+      id: row.id,
+      name: row.name || 'Untitled Folder',
+      parentId: row.parent_id || null,
+      createdAt: row.created_at ? new Date(row.created_at) : new Date()
     });
   }
 
@@ -556,9 +986,13 @@ async function loadDataFromPostgres() {
         password: row.password,
         name: row.name,
         personalPinHash: row.personal_pin_hash || undefined,
+        pinFailedAttempts: Math.max(0, Number(row.pin_failed_attempts) || 0),
+        pinLockedUntil: row.pin_locked_until ? new Date(row.pin_locked_until) : null,
+        pinLockCycles: Math.max(0, Number(row.pin_lock_cycles) || 0),
         createdAt: row.created_at ? new Date(row.created_at) : new Date()
       })),
-      memories
+      memories,
+      folders
     },
     admin: {
       activities: activitiesResult.rows.map((row) => ({
@@ -583,17 +1017,21 @@ async function persistDataToPostgres() {
     await client.query('BEGIN');
     await client.query('DELETE FROM users');
     await client.query('DELETE FROM memories');
+    await client.query('DELETE FROM folders');
 
     for (const user of data.users) {
       await client.query(
-        `INSERT INTO users (id, email, password, name, personal_pin_hash, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO users (id, email, password, name, personal_pin_hash, pin_failed_attempts, pin_locked_until, pin_lock_cycles, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           String(user.id),
           String(user.email || ''),
           String(user.password || ''),
           user.name || '',
           user.personalPinHash || null,
+          Math.max(0, Number(user.pinFailedAttempts) || 0),
+          user.pinLockedUntil ? new Date(user.pinLockedUntil) : null,
+          Math.max(0, Number(user.pinLockCycles) || 0),
           user.createdAt ? new Date(user.createdAt) : new Date()
         ]
       );
@@ -602,8 +1040,8 @@ async function persistDataToPostgres() {
     const memoryRows = Object.values(data.memories || {}).flat();
     for (const memory of memoryRows) {
       await client.query(
-        `INSERT INTO memories (id, user_email, title, content, is_important, vault_type, timestamp, is_favorite)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO memories (id, user_email, title, content, is_important, vault_type, folder_id, review_interval_days, last_reviewed_at, next_review_at, timestamp, is_favorite)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           String(memory.id),
           String(memory.user_email || ''),
@@ -611,8 +1049,29 @@ async function persistDataToPostgres() {
           memory.content || '',
           Boolean(memory.is_important),
           memory.vault_type || '',
+          memory.folder_id || null,
+          Math.max(1, Math.min(30, Number(memory.review_interval_days) || 3)),
+          memory.last_reviewed_at ? new Date(memory.last_reviewed_at) : null,
+          memory.next_review_at ? new Date(memory.next_review_at) : null,
           memory.timestamp ? new Date(memory.timestamp) : new Date(),
           Boolean(memory.isFavorite)
+        ]
+      );
+    }
+
+    const folderRows = Object.entries(data.folders || {})
+      .flatMap(([email, folders]) => (Array.isArray(folders) ? folders.map((f) => ({ email, folder: f })) : []));
+    for (const item of folderRows) {
+      const folder = item.folder || {};
+      await client.query(
+        `INSERT INTO folders (id, user_email, name, parent_id, created_at)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          String(folder.id),
+          String(item.email || ''),
+          String(folder.name || 'Untitled Folder'),
+          folder.parentId ? String(folder.parentId) : null,
+          folder.createdAt ? new Date(folder.createdAt) : new Date()
         ]
       );
     }
@@ -659,7 +1118,8 @@ async function persistAdminToPostgres() {
 }
 
 function saveData(data) {
-  dataCache = normalizeData(data);
+  // dataCache is already pointing to the same object normally, but we ensure it.
+  dataCache = data;
   if (storageMode === 'mongo' && mongoReady) {
     enqueuePersist(async () => {
       await persistDataToMongo();
@@ -678,7 +1138,7 @@ function saveData(data) {
 }
 
 function saveAdminData(data) {
-  adminCache = normalizeAdminData(data);
+  adminCache = data;
   if (storageMode === 'mongo' && mongoReady) {
     enqueuePersist(async () => {
       await persistAdminToMongo();
@@ -786,15 +1246,18 @@ function ensureStorageInitialized() {
 async function ensureMongoReadyForRequest() {
   if (!MONGO_URI) return false;
   if (storageMode === 'mongo' && mongoReady) return true;
+  if (Date.now() < mongoNextRetryAt) return false;
   try {
     await connectDB();
     ensureMongoModels();
     mongoReady = true;
     storageMode = 'mongo';
     storageInitLastError = '';
+    mongoNextRetryAt = 0;
     return true;
   } catch (error) {
     storageInitLastError = `mongo: ${error.message}`;
+    mongoNextRetryAt = Date.now() + MONGO_RETRY_COOLDOWN_MS;
     return false;
   }
 }
@@ -804,22 +1267,95 @@ function getClientIp(req) {
   if (typeof forwarded === 'string' && forwarded.trim()) {
     return forwarded.split(',')[0].trim();
   }
+  const realIp = req.headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp.trim()) {
+    return realIp.trim();
+  }
   return req.socket?.remoteAddress || 'unknown';
+}
+
+function isLoopbackIp(ip) {
+  const value = String(ip || '').trim().toLowerCase();
+  return value === '::1'
+    || value === '127.0.0.1'
+    || value === '::ffff:127.0.0.1'
+    || value === 'localhost';
+}
+
+function isLocalRequest(req) {
+  const host = String(req.hostname || '').trim().toLowerCase();
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+  return isLoopbackIp(getClientIp(req));
+}
+
+function readHeaderValue(req, key) {
+  const value = req.headers[key];
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
+function getRequestGeo(req) {
+  const countryCode =
+    readHeaderValue(req, 'x-vercel-ip-country') ||
+    readHeaderValue(req, 'cf-ipcountry') ||
+    readHeaderValue(req, 'x-country-code') ||
+    '';
+
+  const region =
+    readHeaderValue(req, 'x-vercel-ip-country-region') ||
+    readHeaderValue(req, 'x-region') ||
+    '';
+
+  const city =
+    readHeaderValue(req, 'x-vercel-ip-city') ||
+    readHeaderValue(req, 'x-city') ||
+    '';
+
+  const latitude =
+    readHeaderValue(req, 'x-vercel-ip-latitude') ||
+    readHeaderValue(req, 'x-latitude') ||
+    '';
+
+  const longitude =
+    readHeaderValue(req, 'x-vercel-ip-longitude') ||
+    readHeaderValue(req, 'x-longitude') ||
+    '';
+
+  const timezone =
+    readHeaderValue(req, 'x-vercel-ip-timezone') ||
+    readHeaderValue(req, 'x-timezone') ||
+    '';
+
+  const source = countryCode || region || city ? 'edge_headers' : 'unknown';
+
+  return {
+    countryCode: countryCode || null,
+    region: region || null,
+    city: city || null,
+    latitude: latitude || null,
+    longitude: longitude || null,
+    timezone: timezone || null,
+    source
+  };
 }
 
 function logActivity(req, action, details = {}) {
   const adminData = loadAdminData();
   const safeDetails = details && typeof details === 'object' ? details : {};
+  const geo = getRequestGeo(req);
   const activity = {
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     timestamp: new Date().toISOString(),
     action,
-    email: req.user?.email || null,
-    userId: req.user?.id || null,
+    email: req.user?.email || safeDetails.email || null,
+    userId: req.user?.id || safeDetails.userId || null,
     method: req.method,
     path: req.path,
     ip: getClientIp(req),
-    details: safeDetails
+    details: {
+      ...safeDetails,
+      geo
+    }
   };
 
   adminData.activities.push(activity);
@@ -827,6 +1363,62 @@ function logActivity(req, action, details = {}) {
     adminData.activities = adminData.activities.slice(-5000);
   }
   saveAdminData(adminData);
+}
+
+function buildRegisteredActiveUsersSnapshot(appData, adminData, options = {}) {
+  const minutes = Math.max(1, Math.min(1440, Number(options.minutes) || ACTIVE_USER_WINDOW_MINUTES));
+  const limit = Math.max(1, Math.min(2000, Number(options.limit) || 500));
+  const realOnly = Boolean(options.realOnly);
+  const cutoffMs = Date.now() - (minutes * 60 * 1000);
+
+  const users = Array.isArray(appData?.users) ? appData.users : [];
+  const memoriesByEmail = appData?.memories && typeof appData.memories === 'object' ? appData.memories : {};
+  const syntheticEmails = buildSyntheticEmailSet(users);
+  const scopedUsers = realOnly ? users.filter((user) => !isLikelySyntheticUser(user)) : users;
+  const userEmailSet = new Set(scopedUsers.map((user) => normalizeEmail(user?.email)).filter(Boolean));
+
+  const latestByEmail = new Map();
+  const sourceActivities = Array.isArray(adminData?.activities) ? adminData.activities : [];
+  for (const activity of sourceActivities) {
+    const email = normalizeEmail(activity?.email);
+    if (!email || !userEmailSet.has(email)) continue;
+    if (realOnly && syntheticEmails.has(email)) continue;
+    const ts = new Date(activity?.timestamp || 0).getTime();
+    if (!Number.isFinite(ts) || ts <= 0) continue;
+    const previous = latestByEmail.get(email);
+    if (!previous || ts > previous.timestampMs) {
+      latestByEmail.set(email, {
+        timestampMs: ts,
+        timestamp: new Date(ts).toISOString(),
+        action: activity?.action || '',
+        path: activity?.path || ''
+      });
+    }
+  }
+
+  const rows = scopedUsers
+    .map((user) => {
+      const email = normalizeEmail(user?.email);
+      const latest = latestByEmail.get(email) || null;
+      const userMemories = Array.isArray(memoriesByEmail[email]) ? memoriesByEmail[email] : [];
+      return {
+        id: user?.id || null,
+        email: user?.email || '',
+        username: user?.username || '',
+        name: user?.name || '',
+        createdAt: user?.createdAt || null,
+        memoryCount: userMemories.length,
+        lastActivityAt: latest?.timestamp || null,
+        lastActivityAction: latest?.action || null,
+        lastActivityPath: latest?.path || null,
+        isActiveNow: Boolean(latest && latest.timestampMs >= cutoffMs)
+      };
+    })
+    .filter((row) => row.isActiveNow)
+    .sort((a, b) => new Date(b.lastActivityAt || 0) - new Date(a.lastActivityAt || 0))
+    .slice(0, limit);
+
+  return { minutes, rows };
 }
 
 function verifyAdminAccess(req, res, next) {
@@ -837,44 +1429,81 @@ function verifyAdminAccess(req, res, next) {
     return res.status(503).json({ success: false, message: 'Admin owner email is not configured' });
   }
 
-  const requester = String(req.user?.email || '').toLowerCase();
-  if (requester !== ADMIN_OWNER_EMAIL) {
-    return res.status(403).json({ success: false, message: 'Admin access is restricted to the owner account' });
-  }
-
-  const provided = req.headers['x-admin-key'];
-  if (provided !== ADMIN_API_KEY) {
+  const provided = String(req.headers['x-admin-key'] || '').trim().toLowerCase();
+  const expected = String(ADMIN_API_KEY || '').trim().toLowerCase();
+  if (!provided || provided !== expected) {
     return res.status(401).json({ success: false, message: 'Invalid admin key' });
   }
 
   return next();
 }
 
-function generatePersonalUnlockToken() {
-  return crypto.randomBytes(24).toString('hex');
+function getUserRecord(data, email) {
+  return data.users.find((u) => normalizeEmail(u.email) === normalizeEmail(email));
 }
 
-function getPersonalSession(email) {
-  const session = personalUnlockSessions.get(email);
-  if (!session) return null;
-  if (Date.now() > session.expiresAt) {
-    personalUnlockSessions.delete(email);
+function getUserFolders(data, email) {
+  const key = normalizeEmail(email);
+  if (!Array.isArray(data.folders[key])) data.folders[key] = [];
+  return data.folders[key];
+}
+
+function clampReviewInterval(value) {
+  return Math.max(1, Math.min(30, Number(value) || 3));
+}
+
+function collectDescendantFolderIds(folders, parentId) {
+  const byParent = new Map();
+  for (const folder of folders) {
+    const key = folder.parentId ? String(folder.parentId) : '';
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key).push(String(folder.id));
+  }
+  const result = new Set();
+  const stack = [String(parentId)];
+  while (stack.length) {
+    const current = stack.pop();
+    if (result.has(current)) continue;
+    result.add(current);
+    const children = byParent.get(current) || [];
+    for (const child of children) stack.push(child);
+  }
+  return result;
+}
+
+function toDirectAnswer(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return 'No direct answer available right now.';
+  if (/^\s*(yes|no|you can|you cannot|to|use|open|memory vault)\b/i.test(raw)) return raw;
+  return `Direct answer: ${raw}`;
+}
+
+function generatePersonalUnlockToken(email) {
+  return jwt.sign(
+    { email, scope: 'personal_unlock' },
+    SECRET_KEY,
+    { expiresIn: '15m' }
+  );
+}
+
+function parsePersonalUnlockToken(req) {
+  const headerToken = req.headers['x-personal-unlock-token'];
+  if (!headerToken || typeof headerToken !== 'string') return null;
+
+  try {
+    const payload = jwt.verify(headerToken, SECRET_KEY);
+    if (payload?.scope !== 'personal_unlock') return null;
+    if (!payload?.email || payload.email !== req.user?.email) return null;
+    return payload;
+  } catch {
     return null;
   }
-  return session;
 }
 
 function isPersonalUnlocked(req) {
   const email = req.user?.email;
   if (!email) return false;
-  const session = getPersonalSession(email);
-  if (!session) return false;
-  const headerToken = req.headers['x-personal-unlock-token'];
-  if (!headerToken || typeof headerToken !== 'string') return false;
-  const expected = Buffer.from(session.token);
-  const provided = Buffer.from(headerToken);
-  if (expected.length !== provided.length) return false;
-  return crypto.timingSafeEqual(expected, provided);
+  return Boolean(parsePersonalUnlockToken(req));
 }
 
 function requirePersonalUnlock(req, res, next) {
@@ -914,7 +1543,7 @@ app.post('/api/auth/signup', async (req, res) => {
   try {
     const mongoReadyForRequest = await ensureMongoReadyForRequest();
     if (MONGO_URI && !mongoReadyForRequest) {
-      return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry.' });
+      console.warn('MongoDB unavailable during signup; continuing with fallback storage mode.');
     }
     const rawEmail = req.body?.email;
     const rawPassword = req.body?.password;
@@ -922,24 +1551,25 @@ app.post('/api/auth/signup', async (req, res) => {
     const rawUsername = req.body?.username;
     const email = normalizeEmail(rawEmail);
     const password = String(rawPassword || '');
-    const username = normalizeUsername(rawUsername);
-    const name = String(rawName || '').trim() || username;
     const data = loadData();
+    const existingUsernames = new Set(
+      data.users
+        .map((u) => normalizeUsername(u.username || u.name))
+        .filter(Boolean)
+    );
+    let username = generateUniqueUsername(buildUsernameBase(rawUsername, email), existingUsernames);
+    const name = String(rawName || '').trim() || username;
 
-    if (!email || !password || !username) {
-      return res.status(400).json({ success: false, message: 'Email, username, and password are required' });
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
     if (!isValidEmail(email)) {
       return res.status(400).json({ success: false, message: 'Enter a valid email address' });
-    }
-    if (!isValidUsername(username)) {
-      return res.status(400).json({ success: false, message: 'Username must be 3-20 characters (letters, numbers, underscore)' });
     }
     if (!isStrongPassword(password)) {
       return res.status(400).json({ success: false, message: 'Password must be at least 8 characters and include letters and numbers' });
     }
 
-    const usernameInUse = data.users.find((u) => normalizeUsername(u.username || u.name) === username);
     const existingByEmail = data.users.find((u) => normalizeEmail(u.email) === email);
     if (existingByEmail) {
       const existingPasswordOk = await bcrypt.compare(password, existingByEmail.password);
@@ -963,41 +1593,38 @@ app.post('/api/auth/signup', async (req, res) => {
       }
       return res.status(409).json({ success: false, message: 'Email is already registered. Sign in or use Forgot Password.' });
     }
-    if (usernameInUse) {
-      return res.status(400).json({ success: false, message: 'Username is already taken' });
-    }
     if (storageMode === 'mongo' && mongoReady && MongoUser) {
-      const existingMongo = await MongoUser.findOne({
-        $or: [{ email }, { username }]
-      }).lean();
-      if (existingMongo) {
-        if (normalizeEmail(existingMongo.email) === email) {
-          const existingPasswordOk = await bcrypt.compare(password, existingMongo.password);
-          if (existingPasswordOk) {
-            const token = jwt.sign(
-              { email: existingMongo.email, id: existingMongo.id, username: existingMongo.username || existingMongo.name || '' },
-              SECRET_KEY,
-              { expiresIn: '7d' }
-            );
-            return res.json({
-              success: true,
-              message: 'Account already exists. Signed you in automatically.',
-              token,
-              user: {
-                email: existingMongo.email,
-                username: existingMongo.username || '',
-                name: existingMongo.name || existingMongo.username || '',
-                id: existingMongo.id
-              }
-            });
-          }
+      const existingMongoByEmail = await MongoUser.findOne({ email }).lean();
+      if (existingMongoByEmail) {
+        const existingPasswordOk = await bcrypt.compare(password, existingMongoByEmail.password);
+        if (existingPasswordOk) {
+          const token = jwt.sign(
+            { email: existingMongoByEmail.email, id: existingMongoByEmail.id, username: existingMongoByEmail.username || existingMongoByEmail.name || '' },
+            SECRET_KEY,
+            { expiresIn: '7d' }
+          );
+          return res.json({
+            success: true,
+            message: 'Account already exists. Signed you in automatically.',
+            token,
+            user: {
+              email: existingMongoByEmail.email,
+              username: existingMongoByEmail.username || '',
+              name: existingMongoByEmail.name || existingMongoByEmail.username || '',
+              id: existingMongoByEmail.id
+            }
+          });
         }
-        return res.status(400).json({
-          success: false,
-          message: normalizeEmail(existingMongo.email) === email
-            ? 'Email is already registered. Sign in or use Forgot Password.'
-            : 'Username is already taken'
-        });
+        return res.status(409).json({ success: false, message: 'Email is already registered. Sign in or use Forgot Password.' });
+      }
+
+      const mongoTaken = new Set();
+      // Keep trying generated variants until one is free in Mongo.
+      while (true) {
+        const existingMongoByUsername = await MongoUser.findOne({ username }).lean();
+        if (!existingMongoByUsername) break;
+        mongoTaken.add(username);
+        username = generateUniqueUsername(buildUsernameBase(rawUsername, email), new Set([...existingUsernames, ...mongoTaken]));
       }
     }
 
@@ -1008,6 +1635,9 @@ app.post('/api/auth/signup', async (req, res) => {
       username,
       password: hashedPassword,
       name,
+      pinFailedAttempts: 0,
+      pinLockedUntil: null,
+      pinLockCycles: 0,
       createdAt: new Date()
     };
 
@@ -1019,6 +1649,9 @@ app.post('/api/auth/signup', async (req, res) => {
         password: String(user.password),
         name: user.name || '',
         personalPinHash: null,
+        pinFailedAttempts: 0,
+        pinLockedUntil: null,
+        pinLockCycles: 0,
         createdAt: user.createdAt ? new Date(user.createdAt) : new Date()
       });
     }
@@ -1045,7 +1678,7 @@ app.post('/api/auth/signin', async (req, res) => {
   try {
     const mongoReadyForRequest = await ensureMongoReadyForRequest();
     if (MONGO_URI && !mongoReadyForRequest) {
-      return res.status(503).json({ success: false, message: 'Database temporarily unavailable. Please retry.' });
+      console.warn('MongoDB unavailable during signin; continuing with fallback storage mode.');
     }
     const identifierRaw = String(req.body?.identifier || req.body?.email || req.body?.username || '').trim();
     const password = String(req.body?.password || '');
@@ -1075,6 +1708,9 @@ app.post('/api/auth/signin', async (req, res) => {
           password: mongoUser.password,
           name: mongoUser.name || '',
           personalPinHash: mongoUser.personalPinHash || undefined,
+          pinFailedAttempts: Math.max(0, Number(mongoUser.pinFailedAttempts) || 0),
+          pinLockedUntil: mongoUser.pinLockedUntil || null,
+          pinLockCycles: Math.max(0, Number(mongoUser.pinLockCycles) || 0),
           createdAt: mongoUser.createdAt ? new Date(mongoUser.createdAt) : new Date()
         };
       }
@@ -1108,6 +1744,124 @@ app.post('/api/auth/signin', async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post('/api/auth/oauth', async (req, res) => {
+  try {
+    const mongoReadyForRequest = await ensureMongoReadyForRequest();
+    if (MONGO_URI && !mongoReadyForRequest) {
+      console.warn('MongoDB unavailable during oauth signin; continuing with fallback storage mode.');
+    }
+
+    const provider = String(req.body?.provider || '').trim().toLowerCase();
+    if (!provider) {
+      return res.status(400).json({ success: false, message: 'OAuth provider is required.' });
+    }
+
+    const identity = await verifySocialIdentity(provider, req.body || {});
+    const data = loadData();
+    const existingUsernames = new Set(
+      data.users
+        .map((u) => normalizeUsername(u.username || u.name))
+        .filter(Boolean)
+    );
+
+    let user = data.users.find((u) => normalizeEmail(u.email) === identity.email);
+    let created = false;
+
+    if (!user && storageMode === 'mongo' && mongoReady && MongoUser) {
+      const mongoUser = await MongoUser.findOne({ email: identity.email }).lean();
+      if (mongoUser) {
+        user = {
+          id: mongoUser.id,
+          email: mongoUser.email,
+          username: mongoUser.username || '',
+          password: mongoUser.password,
+          name: mongoUser.name || '',
+          pinFailedAttempts: Math.max(0, Number(mongoUser.pinFailedAttempts) || 0),
+          pinLockedUntil: mongoUser.pinLockedUntil || null,
+          pinLockCycles: Math.max(0, Number(mongoUser.pinLockCycles) || 0),
+          createdAt: mongoUser.createdAt ? new Date(mongoUser.createdAt) : new Date()
+        };
+      }
+    }
+
+    if (!user) {
+      let username = generateUniqueUsername(buildUsernameBase(identity.name, identity.email), existingUsernames);
+      if (storageMode === 'mongo' && mongoReady && MongoUser) {
+        const mongoTaken = new Set();
+        while (true) {
+          const existingMongoByUsername = await MongoUser.findOne({ username }).lean();
+          if (!existingMongoByUsername) break;
+          mongoTaken.add(username);
+          username = generateUniqueUsername(buildUsernameBase(identity.name, identity.email), new Set([...existingUsernames, ...mongoTaken]));
+        }
+      }
+
+      const randomPassword = `${crypto.randomBytes(18).toString('base64url')}A1`;
+      const hashedPassword = await bcrypt.hash(randomPassword, 10);
+      user = {
+        id: Date.now().toString(),
+        email: identity.email,
+        username,
+        password: hashedPassword,
+        name: identity.name || username,
+        pinFailedAttempts: 0,
+        pinLockedUntil: null,
+        pinLockCycles: 0,
+        createdAt: new Date()
+      };
+
+      if (storageMode === 'mongo' && mongoReady && MongoUser) {
+        await MongoUser.create({
+          id: String(user.id),
+          email: String(user.email),
+          username: String(user.username),
+          password: String(user.password),
+          name: user.name || '',
+          personalPinHash: null,
+          pinFailedAttempts: 0,
+          pinLockedUntil: null,
+          pinLockCycles: 0,
+          createdAt: user.createdAt ? new Date(user.createdAt) : new Date()
+        });
+      }
+
+      data.users.push(user);
+      if (!Array.isArray(data.memories[user.email])) {
+        data.memories[user.email] = [];
+      }
+      saveData(data);
+      created = true;
+    }
+
+    const token = jwt.sign(
+      { email: user.email, id: user.id, username: user.username || user.name || '' },
+      SECRET_KEY,
+      { expiresIn: '7d' }
+    );
+
+    logActivity(req, created ? 'auth_oauth_signup' : 'auth_oauth_signin', {
+      provider,
+      email: user.email,
+      created
+    });
+
+    return res.json({
+      success: true,
+      message: created ? 'Account created with social sign-in.' : 'Signed in successfully.',
+      token,
+      user: {
+        email: user.email,
+        username: user.username || '',
+        name: user.name || user.username || '',
+        id: user.id
+      },
+      provider
+    });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message || 'Social sign-in failed.' });
   }
 });
 
@@ -1226,14 +1980,18 @@ app.post('/api/auth/reset-password', async (req, res) => {
 app.get('/api/personal/pin/status', verifyToken, (req, res) => {
   try {
     const data = loadData();
-    const user = data.users.find((u) => u.email === req.user.email);
-    const session = getPersonalSession(req.user.email);
+    const user = getUserRecord(data, req.user.email);
+    const payload = parsePersonalUnlockToken(req);
+    const expiresAt = payload?.exp ? Number(payload.exp) * 1000 : null;
+    const lockedUntil = user?.pinLockedUntil ? new Date(user.pinLockedUntil).getTime() : 0;
 
     return res.json({
       success: true,
       configured: Boolean(user?.personalPinHash),
-      unlocked: Boolean(session),
-      expiresAt: session?.expiresAt || null
+      unlocked: Boolean(payload),
+      expiresAt,
+      pinLocked: Boolean(lockedUntil && lockedUntil > Date.now()),
+      pinLockedUntil: lockedUntil || null
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -1248,7 +2006,7 @@ app.post('/api/personal/pin/setup', verifyToken, async (req, res) => {
     }
 
     const data = loadData();
-    const user = data.users.find((u) => u.email === req.user.email);
+    const user = getUserRecord(data, req.user.email);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -1257,6 +2015,9 @@ app.post('/api/personal/pin/setup', verifyToken, async (req, res) => {
     }
 
     user.personalPinHash = await bcrypt.hash(pin, 12);
+    user.pinFailedAttempts = 0;
+    user.pinLockedUntil = null;
+    user.pinLockCycles = 0;
     saveData(data);
     logActivity(req, 'personal_pin_setup');
 
@@ -1274,20 +2035,47 @@ app.post('/api/personal/pin/verify', verifyToken, async (req, res) => {
     }
 
     const data = loadData();
-    const user = data.users.find((u) => u.email === req.user.email);
+    const user = getUserRecord(data, req.user.email);
     if (!user?.personalPinHash) {
       return res.status(400).json({ success: false, message: 'Personal PIN is not configured' });
     }
 
+    const lockedUntilMs = user.pinLockedUntil ? new Date(user.pinLockedUntil).getTime() : 0;
+    if (lockedUntilMs && lockedUntilMs > Date.now()) {
+      return res.status(423).json({
+        success: false,
+        message: 'PIN is temporarily locked after repeated failures. Try again later.',
+        pinLockedUntil: lockedUntilMs
+      });
+    }
+
     const ok = await bcrypt.compare(pin, user.personalPinHash);
     if (!ok) {
+      user.pinFailedAttempts = Math.max(0, Number(user.pinFailedAttempts) || 0) + 1;
+      if (user.pinFailedAttempts >= 7) {
+        user.pinFailedAttempts = 0;
+        user.pinLockedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        user.pinLockCycles = Math.max(0, Number(user.pinLockCycles) || 0) + 1;
+        if (user.pinLockCycles >= 3) {
+          const list = Array.isArray(data.memories[req.user.email]) ? data.memories[req.user.email] : [];
+          data.memories[req.user.email] = list.filter((m) => String(m.vault_type || '').toLowerCase() !== 'personal');
+          user.pinLockCycles = 0;
+          logActivity(req, 'personal_pin_data_wipe_after_lock_cycles');
+        }
+      }
+      saveData(data);
       logActivity(req, 'personal_pin_verify_failed');
       return res.status(401).json({ success: false, message: 'Invalid PIN' });
     }
 
-    const token = generatePersonalUnlockToken();
-    const expiresAt = Date.now() + PERSONAL_UNLOCK_TTL_MS;
-    personalUnlockSessions.set(req.user.email, { token, expiresAt });
+    user.pinFailedAttempts = 0;
+    user.pinLockedUntil = null;
+    user.pinLockCycles = 0;
+    saveData(data);
+
+    const token = generatePersonalUnlockToken(req.user.email);
+    const parsed = jwt.decode(token);
+    const expiresAt = parsed?.exp ? Number(parsed.exp) * 1000 : Date.now() + PERSONAL_UNLOCK_TTL_MS;
     logActivity(req, 'personal_pin_verified', { expiresAt });
 
     return res.json({
@@ -1309,7 +2097,7 @@ app.post('/api/personal/pin/reset', verifyToken, async (req, res) => {
     }
 
     const data = loadData();
-    const user = data.users.find((u) => u.email === req.user.email);
+    const user = getUserRecord(data, req.user.email);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -1321,11 +2109,14 @@ app.post('/api/personal/pin/reset', verifyToken, async (req, res) => {
     }
 
     user.personalPinHash = await bcrypt.hash(newPin, 12);
+    user.pinFailedAttempts = 0;
+    user.pinLockedUntil = null;
+    user.pinLockCycles = 0;
     saveData(data);
 
-    const token = generatePersonalUnlockToken();
-    const expiresAt = Date.now() + PERSONAL_UNLOCK_TTL_MS;
-    personalUnlockSessions.set(req.user.email, { token, expiresAt });
+    const token = generatePersonalUnlockToken(req.user.email);
+    const parsed = jwt.decode(token);
+    const expiresAt = parsed?.exp ? Number(parsed.exp) * 1000 : Date.now() + PERSONAL_UNLOCK_TTL_MS;
     logActivity(req, 'personal_pin_reset', { expiresAt });
 
     return res.json({ success: true, message: 'Personal PIN reset successfully', unlockToken: token, expiresAt });
@@ -1335,20 +2126,237 @@ app.post('/api/personal/pin/reset', verifyToken, async (req, res) => {
 });
 
 app.post('/api/personal/pin/lock', verifyToken, (req, res) => {
-  personalUnlockSessions.delete(req.user.email);
   logActivity(req, 'personal_pin_lock');
   return res.json({ success: true, message: 'Personal vault locked' });
 });
 
-app.get('/api/admin/me', verifyToken, (req, res) => {
-  const requester = String(req.user?.email || '').toLowerCase();
-  return res.json({
-    success: true,
-    isAdmin: Boolean(ADMIN_API_KEY && ADMIN_OWNER_EMAIL && requester === ADMIN_OWNER_EMAIL),
-    currentEmail: requester || null,
-    ownerEmail: ADMIN_OWNER_EMAIL || null
-  });
+app.get('/api/folders', verifyToken, (req, res) => {
+  try {
+    const data = loadData();
+    const folders = getUserFolders(data, req.user.email);
+    return res.json({ success: true, data: folders });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Could not load folders' });
+  }
 });
+
+app.post('/api/folders', verifyToken, (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    const parentId = req.body?.parentId ? String(req.body.parentId) : null;
+    if (!name) {
+      return res.status(400).json({ success: false, message: 'Folder name is required' });
+    }
+    const data = loadData();
+    const folders = getUserFolders(data, req.user.email);
+    if (parentId && !folders.some((f) => String(f.id) === parentId)) {
+      return res.status(400).json({ success: false, message: 'Parent folder not found' });
+    }
+    const folder = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: name.slice(0, 80),
+      parentId,
+      createdAt: new Date().toISOString()
+    };
+    folders.push(folder);
+    saveData(data);
+    logActivity(req, 'folder_create', { folderId: folder.id, parentId: folder.parentId || null });
+    return res.json({ success: true, data: folder });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Could not create folder' });
+  }
+});
+
+app.patch('/api/folders/:id', verifyToken, (req, res) => {
+  try {
+    const folderId = String(req.params.id || '');
+    const data = loadData();
+    const folders = getUserFolders(data, req.user.email);
+    const folder = folders.find((f) => String(f.id) === folderId);
+    if (!folder) {
+      return res.status(404).json({ success: false, message: 'Folder not found' });
+    }
+    if (typeof req.body?.name === 'string' && req.body.name.trim()) {
+      folder.name = req.body.name.trim().slice(0, 80);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'parentId')) {
+      const nextParentId = req.body.parentId ? String(req.body.parentId) : null;
+      if (nextParentId === folderId) {
+        return res.status(400).json({ success: false, message: 'Folder cannot be its own parent' });
+      }
+      if (nextParentId && !folders.some((f) => String(f.id) === nextParentId)) {
+        return res.status(400).json({ success: false, message: 'Parent folder not found' });
+      }
+      const descendants = collectDescendantFolderIds(folders, folderId);
+      if (nextParentId && descendants.has(nextParentId)) {
+        return res.status(400).json({ success: false, message: 'Cannot move folder inside its own descendant' });
+      }
+      folder.parentId = nextParentId;
+    }
+    saveData(data);
+    logActivity(req, 'folder_update', { folderId: folder.id });
+    return res.json({ success: true, data: folder });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Could not update folder' });
+  }
+});
+
+app.delete('/api/folders/:id', verifyToken, (req, res) => {
+  try {
+    const folderId = String(req.params.id || '');
+    const data = loadData();
+    const folders = getUserFolders(data, req.user.email);
+    if (!folders.some((f) => String(f.id) === folderId)) {
+      return res.status(404).json({ success: false, message: 'Folder not found' });
+    }
+    const descendantIds = collectDescendantFolderIds(folders, folderId);
+    data.folders[req.user.email] = folders.filter((f) => !descendantIds.has(String(f.id)));
+    const userMemories = Array.isArray(data.memories[req.user.email]) ? data.memories[req.user.email] : [];
+    for (const memory of userMemories) {
+      if (memory.folder_id && descendantIds.has(String(memory.folder_id))) {
+        memory.folder_id = null;
+      }
+    }
+    saveData(data);
+    logActivity(req, 'folder_delete', { folderId, descendants: descendantIds.size });
+    return res.json({ success: true, message: 'Folder deleted' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Could not delete folder' });
+  }
+});
+
+app.get('/api/memories/trending', (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    const limitRaw = Number(req.query?.limit || 6);
+    const limit = Math.max(1, Math.min(24, Number.isFinite(limitRaw) ? limitRaw : 6));
+    const data = loadData();
+    const users = Array.isArray(data?.users) ? data.users : [];
+    const registeredUserEmailSet = new Set(
+      users
+        .map((u) => normalizeEmail(u?.email))
+        .filter(Boolean)
+    );
+
+    const memoryBuckets = data?.memories && typeof data.memories === 'object' ? Object.entries(data.memories) : [];
+    const all = [];
+    for (const [rawEmail, list] of memoryBuckets) {
+      const email = normalizeEmail(rawEmail);
+      if (!email) continue;
+      // Only include entries that belong to a registered user account.
+      if (registeredUserEmailSet.size > 0 && !registeredUserEmailSet.has(email)) continue;
+      if (!Array.isArray(list)) continue;
+      for (const m of list) {
+        if (String(m?.vault_type || '').toLowerCase() === 'personal') continue;
+        all.push({ ...m, user_email: email });
+      }
+    }
+
+    const recentImportant = [...all]
+      .filter((m) => Boolean(m?.is_important))
+      .sort((a, b) => new Date(b?.timestamp || 0) - new Date(a?.timestamp || 0))
+      .slice(0, Math.max(limit * 8, 24));
+
+    // Step 1: one important memory per real user for diversity.
+    const perUser = new Map();
+    for (const m of recentImportant) {
+      const email = normalizeEmail(m?.user_email);
+      if (!email || perUser.has(email)) continue;
+      perUser.set(email, m);
+    }
+
+    const byUser = [...perUser.values()]
+      .sort((a, b) => new Date(b?.timestamp || 0) - new Date(a?.timestamp || 0));
+
+    // Step 2: fill remainder with newest unique important memories.
+    const seenSignature = new Set();
+    const trending = [];
+    const candidates = [...byUser, ...recentImportant];
+    for (const m of candidates) {
+      const signature = [
+        normalizeEmail(m?.user_email),
+        String(m?.title || '').trim().toLowerCase(),
+        String(m?.content || '').trim().toLowerCase(),
+        String(m?.vault_type || '').trim().toLowerCase()
+      ].join('|');
+      if (seenSignature.has(signature)) continue;
+      seenSignature.add(signature);
+      trending.push({
+        id: String(m?.id || ''),
+        title: String(m?.title || ''),
+        content: String(m?.content || ''),
+        is_important: true,
+        vault_type: String(m?.vault_type || ''),
+        timestamp: m?.timestamp || new Date().toISOString()
+      });
+      if (trending.length >= limit) break;
+    }
+
+    return res.json({ success: true, data: trending, generatedAt: new Date().toISOString() });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Could not load trending memories' });
+  }
+});
+
+app.get('/api/memories/due', verifyToken, (req, res) => {
+  try {
+    const data = loadData();
+    const now = Date.now();
+    const includePersonal = isPersonalUnlocked(req);
+    const list = Array.isArray(data.memories[req.user.email]) ? data.memories[req.user.email] : [];
+    const due = list.filter((m) => {
+      const important = Boolean(m.is_important);
+      if (!important) return false;
+      if (!includePersonal && String(m.vault_type || '').toLowerCase() === 'personal') return false;
+      const dueAt = m.next_review_at ? new Date(m.next_review_at).getTime() : 0;
+      return Boolean(dueAt && dueAt <= now);
+    }).sort((a, b) => new Date(a.next_review_at || 0) - new Date(b.next_review_at || 0));
+    return res.json({ success: true, data: due.slice(0, 20), total: due.length });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Could not load due memories' });
+  }
+});
+
+app.post('/api/account/reset', verifyToken, async (req, res) => {
+  try {
+    const password = String(req.body?.password || '');
+    const scope = String(req.body?.scope || 'all').toLowerCase() === 'personal' ? 'personal' : 'all';
+    const data = loadData();
+    const user = getUserRecord(data, req.user.email);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      return res.status(401).json({ success: false, message: 'Invalid account password' });
+    }
+
+    const list = Array.isArray(data.memories[req.user.email]) ? data.memories[req.user.email] : [];
+    if (scope === 'personal') {
+      data.memories[req.user.email] = list.filter((m) => String(m.vault_type || '').toLowerCase() !== 'personal');
+      user.personalPinHash = null;
+      user.pinFailedAttempts = 0;
+      user.pinLockedUntil = null;
+      user.pinLockCycles = 0;
+    } else {
+      data.memories[req.user.email] = [];
+      data.folders[req.user.email] = [];
+      user.personalPinHash = null;
+      user.pinFailedAttempts = 0;
+      user.pinLockedUntil = null;
+      user.pinLockCycles = 0;
+    }
+    saveData(data);
+    logActivity(req, 'account_reset', { scope });
+    return res.json({ success: true, message: scope === 'personal' ? 'Personal vault data wiped.' : 'All memories and folders wiped.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Could not reset account data' });
+  }
+});
+
 
 function verifyToken(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
@@ -1365,6 +2373,39 @@ function verifyToken(req, res, next) {
   }
 }
 
+function attachUserFromTokenIfPresent(req) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    req.user = null;
+    return;
+  }
+  try {
+    const decoded = jwt.verify(token, SECRET_KEY);
+    req.user = decoded;
+  } catch {
+    req.user = null;
+  }
+}
+
+app.post('/api/session/ping', verifyToken, (req, res) => {
+  const page = String(req.body?.page || '').slice(0, 120);
+  const visibility = String(req.body?.visibility || '').slice(0, 32);
+  logActivity(req, 'session_ping', { page: page || null, visibility: visibility || null });
+  return res.json({
+    success: true,
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.post('/api/session/logout', verifyToken, (req, res) => {
+  const reason = String(req.body?.reason || 'user').slice(0, 64);
+  logActivity(req, 'auth_logout', { reason });
+  return res.json({
+    success: true,
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.get('/api/memories', verifyToken, (req, res) => {
   try {
     const data = loadData();
@@ -1378,9 +2419,43 @@ app.get('/api/memories', verifyToken, (req, res) => {
   }
 });
 
+app.get('/api/memories/trending', (req, res) => {
+  try {
+    const data = loadData();
+    // Aggregate memories from all users, excluding personal vault
+    const allPublicMemories = Object.entries(data.memories || {}).flatMap(([email, list]) => {
+      if (!Array.isArray(list)) return [];
+      return list.filter(m => String(m.vault_type || '').toLowerCase() !== 'personal');
+    });
+
+    // Sort by importance (is_important or isFavorite) and then by recency
+    const trending = allPublicMemories
+      .sort((a, b) => {
+        const scoreA = (a.is_important ? 2 : 0) + (a.isFavorite ? 1 : 0);
+        const scoreB = (b.is_important ? 2 : 0) + (b.isFavorite ? 1 : 0);
+        if (scoreA !== scoreB) return scoreB - scoreA;
+        return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
+      })
+      .slice(0, 10)
+      .map(m => ({
+        id: m.id,
+        title: m.title,
+        content: m.content,
+        vault_type: m.vault_type,
+        timestamp: m.timestamp,
+        is_important: m.is_important,
+        isFavorite: m.isFavorite
+      }));
+
+    return res.json({ success: true, data: trending });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Could not load trending memories' });
+  }
+});
+
 app.post('/api/memories', verifyToken, (req, res) => {
   try {
-    const { title, content, is_important, vault_type } = req.body;
+    const { title, content, is_important, vault_type, tags } = req.body;
     if (vault_type === 'personal' && !isPersonalUnlocked(req)) {
       return res.status(403).json({ success: false, message: 'Unlock personal vault with your PIN first' });
     }
@@ -1397,6 +2472,7 @@ app.post('/api/memories', verifyToken, (req, res) => {
       content,
       is_important,
       vault_type,
+      tags: Array.isArray(tags) ? tags : [],
       timestamp: new Date(),
       user_email: req.user.email
     };
@@ -1415,7 +2491,8 @@ app.patch('/api/memories/:id', verifyToken, (req, res) => {
   try {
     const data = loadData();
     const memories = data.memories[req.user.email] || [];
-    const memory = memories.find((m) => m.id === req.params.id);
+    const requestedId = String(req.params.id || '');
+    const memory = memories.find((m) => String(m?.id || '') === requestedId);
 
     if (!memory) {
       return res.status(404).json({ success: false, message: 'Memory not found' });
@@ -1424,7 +2501,7 @@ app.patch('/api/memories/:id', verifyToken, (req, res) => {
       return res.status(403).json({ success: false, message: 'Unlock personal vault with your PIN first' });
     }
 
-    const { isFavorite, title, content, is_important, vault_type } = req.body;
+    const { isFavorite, title, content, is_important, vault_type, tags } = req.body;
     if (typeof vault_type === 'string' && vault_type === 'personal' && !isPersonalUnlocked(req)) {
       return res.status(403).json({ success: false, message: 'Unlock personal vault with your PIN first' });
     }
@@ -1433,6 +2510,7 @@ app.patch('/api/memories/:id', verifyToken, (req, res) => {
     if (typeof content === 'string') memory.content = content;
     if (typeof is_important === 'boolean') memory.is_important = is_important;
     if (typeof vault_type === 'string') memory.vault_type = vault_type;
+    if (Array.isArray(tags)) memory.tags = tags;
 
     saveData(data);
     logActivity(req, 'memory_update', { id: memory.id, vault_type: memory.vault_type });
@@ -1442,11 +2520,12 @@ app.patch('/api/memories/:id', verifyToken, (req, res) => {
   }
 });
 
-app.delete('/api/memories/:id', verifyToken, (req, res) => {
+app.delete('/api/memories/:id', verifyToken, async (req, res) => {
   try {
     const data = loadData();
     const memories = data.memories[req.user.email] || [];
-    const index = memories.findIndex((m) => m.id === req.params.id);
+    const requestedId = String(req.params.id || '');
+    const index = memories.findIndex((m) => String(m?.id || '') === requestedId);
 
     if (index === -1) {
       return res.status(404).json({ success: false, message: 'Memory not found' });
@@ -1457,6 +2536,15 @@ app.delete('/api/memories/:id', verifyToken, (req, res) => {
 
     const removed = memories[index];
     memories.splice(index, 1);
+    
+    // Explicitly delete from database if in mongo/pg mode
+    if (storageMode === 'mongo' && mongoReady) {
+      await MongoMemory.deleteOne({ id: requestedId });
+    }
+    if (storageMode === 'postgres' && pgPool) {
+      await pgPool.query('DELETE FROM memories WHERE id = $1', [requestedId]);
+    }
+
     saveData(data);
     logActivity(req, 'memory_delete', { id: removed?.id, vault_type: removed?.vault_type });
 
@@ -1552,7 +2640,7 @@ function isMemoryVaultRelatedQuestion(message) {
 }
 
 function getOutOfScopeResponse() {
-  return 'I can only answer Memory Vault-related questions. Ask about your memories, vaults, account, AI assistant, or Memory Vault features.';
+  return 'I am your Memory Vault companion. How can I help you today?';
 }
 
 function getMemoryScore(memory, queryTokens) {
@@ -1656,8 +2744,389 @@ function buildKnowledgeContextForAI(message) {
   };
 }
 
+function buildAppCapabilityContext() {
+  return [
+    'Memory Vault app capabilities:',
+    '- Authentication: sign up, sign in, social OAuth (when configured), forgot/reset password.',
+    '- Vaults: personal (PIN-protected), learning, cultural, future.',
+    '- Memory actions: create, list, search, update favorite, delete, export JSON/CSV/TXT.',
+    '- Dashboard and metrics: streak, prompts, reminders, activity summaries.',
+    '- AI assistant: can answer app usage questions and perform memory actions when explicitly requested.',
+    '- Admin area (owner only): stats, users, activities, active users.',
+    '- If user asks how to do something in the app, provide concrete UI steps.',
+    '- If user asks about missing config/integration, explain what is needed and where to set it.'
+  ].join('\n');
+}
+
+function normalizeVaultType(input) {
+  const value = normalizeText(input);
+  if (!value) return 'learning';
+  if (value.includes('personal') || value.includes('diary')) return 'personal';
+  if (value.includes('cultural') || value.includes('culture')) return 'cultural';
+  if (value.includes('future') || value.includes('goal')) return 'future';
+  if (value.includes('learning') || value.includes('study') || value.includes('knowledge')) return 'learning';
+  return 'learning';
+}
+
+function parseLimitFromText(text, fallback = 5, max = 20) {
+  const raw = String(text || '').toLowerCase();
+  const match = raw.match(/\b(?:top|last|recent|show|list)?\s*(\d{1,2})\b/);
+  const parsed = Number(match?.[1] || fallback);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(max, parsed));
+}
+
+function parseMemoryTarget(rawMessage) {
+  const raw = String(rawMessage || '').trim();
+  const idMatch = raw.match(/\bid\s*[:=]?\s*([a-z0-9_-]{5,})/i);
+  if (idMatch?.[1]) {
+    return { id: idMatch[1], text: '' };
+  }
+
+  const quoted = raw.match(/["“](.+?)["”]/);
+  if (quoted?.[1]) {
+    return { id: '', text: quoted[1].trim() };
+  }
+
+  const memoryIndex = raw.toLowerCase().indexOf('memory');
+  if (memoryIndex >= 0) {
+    const rest = raw.slice(memoryIndex + 'memory'.length).replace(/^(\s*(called|named|title|with)\s*)/i, '').trim();
+    return { id: '', text: rest };
+  }
+  return { id: '', text: '' };
+}
+
+function resolveMemoryByTarget(memories, target) {
+  if (!Array.isArray(memories) || memories.length === 0) return null;
+  if (target?.id) {
+    return memories.find((m) => String(m.id) === String(target.id)) || null;
+  }
+
+  const query = normalizeText(target?.text || '');
+  if (!query) return null;
+  const matches = memories.filter((m) => {
+    const title = normalizeText(m.title);
+    const content = normalizeText(m.content);
+    return title.includes(query) || content.includes(query);
+  });
+  if (!matches.length) return null;
+  return [...matches].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+}
+
+function parseAIAssistantAction(message) {
+  const raw = String(message || '').trim();
+  const lower = raw.toLowerCase();
+  if (!lower) return null;
+
+  const createIntent = (
+    /^(add|create|save)\b.*\bmemory\b/.test(lower) ||
+    /^(remember|note|log)\b/.test(lower) ||
+    /\b(save|add|create)\b.*\b(this|that)\b/.test(lower)
+  );
+  if (createIntent) {
+    const segments = raw.split(';').map((s) => s.trim()).filter(Boolean);
+    let title = '';
+    let content = '';
+    let vaultType = '';
+    let important = /\bimportant\b/.test(lower);
+
+    for (const segment of segments) {
+      const titleMatch = segment.match(/^title\s*[:=]\s*(.+)$/i);
+      if (titleMatch) {
+        title = titleMatch[1].trim();
+        continue;
+      }
+      const contentMatch = segment.match(/^content\s*[:=]\s*(.+)$/i);
+      if (contentMatch) {
+        content = contentMatch[1].trim();
+        continue;
+      }
+      const vaultMatch = segment.match(/^vault\s*[:=]\s*(.+)$/i);
+      if (vaultMatch) {
+        vaultType = vaultMatch[1].trim();
+        continue;
+      }
+      if (/^important\s*[:=]?\s*(yes|true|1)?$/i.test(segment)) {
+        important = true;
+      }
+    }
+
+    if (!content) {
+      content = raw.replace(/^(add|create|save)\s+memory\s*[:\-]?\s*/i, '').trim();
+      if (content.toLowerCase().startsWith('title:') || content.toLowerCase().startsWith('content:')) {
+        content = '';
+      }
+    }
+    if (!title && content) {
+      title = content.slice(0, 60);
+    }
+
+    return {
+      type: 'create_memory',
+      title: title || '',
+      content: content || '',
+      vaultType: normalizeVaultType(vaultType || ''),
+      important
+    };
+  }
+
+  if (/^(list|show|display)\b.*\bmemories?\b/.test(lower) || /\brecent memories\b/.test(lower)) {
+    return { type: 'list_memories', limit: parseLimitFromText(lower, 5, 20) };
+  }
+
+  if (/^(search|find)\b.*\bmemories?\b/.test(lower)) {
+    const query = raw
+      .replace(/^(search|find)\s+(my\s+)?memories?\s*(for|about)?\s*/i, '')
+      .trim();
+    return { type: 'search_memories', query, limit: parseLimitFromText(lower, 8, 20) };
+  }
+
+  if (/^(delete|remove)\b.*\bmemory\b/.test(lower)) {
+    return { type: 'delete_memory', target: parseMemoryTarget(raw) };
+  }
+
+  if (/^(favorite|favourite|star|unfavorite|unfavourite|unstar)\b.*\bmemory\b/.test(lower)) {
+    const unset = /^(unfavorite|unfavourite|unstar)\b/.test(lower);
+    return { type: 'favorite_memory', favorite: !unset, target: parseMemoryTarget(raw) };
+  }
+
+  if (
+    /\b(memory stats|memory summary|memories summary|summarize memories)\b/.test(lower) ||
+    (/\bhow many\b/.test(lower) && /\bmemories?\b/.test(lower))
+  ) {
+    return { type: 'memory_stats' };
+  }
+
+  return null;
+}
+
+function parseStudentHelpIntent(message) {
+  const lower = String(message || '').trim().toLowerCase();
+  if (!lower) return null;
+
+  if (/\b(sign in|signin|log in|login|sign up|signup|register|create account)\b/.test(lower)) {
+    return { type: 'help_auth' };
+  }
+  if (/\b(forgot password|reset password|recover account)\b/.test(lower)) {
+    return { type: 'help_reset_password' };
+  }
+  if (/\b(add|create|save|write)\b.*\b(memory|note|entry)\b/.test(lower)) {
+    return { type: 'help_add_memory' };
+  }
+  if (/\b(search|find|locate)\b.*\b(memory|note|entry)\b/.test(lower)) {
+    return { type: 'help_search_memory' };
+  }
+  if (/\b(study plan|revision plan|exam prep|prepare for exam|test prep)\b/.test(lower)) {
+    return { type: 'help_study_plan' };
+  }
+  if (/\b(personal vault|pin|lock diary|unlock diary|private diary)\b/.test(lower)) {
+    return { type: 'help_personal_vault' };
+  }
+  if (/\b(export|download|backup)\b.*\b(memory|memories|notes)\b/.test(lower)) {
+    return { type: 'help_export' };
+  }
+  if (/\b(admin|dashboard|owner)\b/.test(lower)) {
+    return { type: 'help_admin' };
+  }
+  if (/\b(ai|assistant|what can you do|help me use)\b/.test(lower)) {
+    return { type: 'help_ai_usage' };
+  }
+
+  return null;
+}
+
+function executeStudentHelpIntent(intent, data, userEmail) {
+  const allMemories = Array.isArray(data?.memories?.[userEmail]) ? data.memories[userEmail] : [];
+  const count = allMemories.length;
+  const learningCount = allMemories.filter((m) => m.vault_type === 'learning').length;
+
+  if (intent.type === 'help_auth') {
+    return 'To enter quickly: 1) Open Sign In. 2) Enter your email/username and password. 3) Tap Sign In. If you are new, switch to Sign Up and create your account first.';
+  }
+  if (intent.type === 'help_reset_password') {
+    return 'Use Forgot Password on the auth form, enter your registered email, open the reset link, then set a new password with letters and numbers.';
+  }
+  if (intent.type === 'help_add_memory') {
+    return 'Fast flow: 1) Open a vault. 2) Tap Add Memory. 3) Write a clear title + short content. 4) Mark important if needed. 5) Save. Tip: one idea per memory improves revision.';
+  }
+  if (intent.type === 'help_search_memory') {
+    return 'Use the top search bar and type keywords from your title/content. You can also ask AI: "search memories for biology formulas" to find them faster.';
+  }
+  if (intent.type === 'help_study_plan') {
+    return `Student plan using your app: Today capture 3 learning memories, mark 1 as important, then ask AI for a summary. Current progress: ${count} total memories, ${learningCount} learning memories.`;
+  }
+  if (intent.type === 'help_personal_vault') {
+    return 'Personal Vault is PIN-protected. Open Personal Diary, enter your PIN to unlock, write entries, then lock again for privacy. If forgotten, use the reset PIN option.';
+  }
+  if (intent.type === 'help_export') {
+    return 'Open Backup/Export, choose scope (all or important), then download JSON/CSV/TXT. Use CSV for spreadsheet revision and JSON for full backup.';
+  }
+  if (intent.type === 'help_admin') {
+    return 'Admin dashboard is owner-only and local-restricted. Sign in with owner account, open Admin, set admin key, then review users, activities, and stats.';
+  }
+  if (intent.type === 'help_ai_usage') {
+    return 'Ask me naturally. Examples: "summarize my recent learning notes", "find my calculus memory", "create memory: title: Week 3 recap; content: ...", "how do I revise better with this app?"';
+  }
+
+  return null;
+}
+
+function executeAIAssistantAction(req, action, data) {
+  const allMemories = Array.isArray(data?.memories?.[req.user.email]) ? data.memories[req.user.email] : [];
+  const sorted = [...allMemories].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  if (action.type === 'list_memories') {
+    const limit = Math.max(1, Math.min(20, Number(action.limit) || 5));
+    if (!sorted.length) {
+      return { handled: true, action: action.type, changed: false, response: 'You have no memories yet. Say: "add memory; title: ...; content: ..."' };
+    }
+    const lines = sorted.slice(0, limit).map((m, i) => `${i + 1}. [${m.vault_type}] ${m.title} (id: ${m.id})`);
+    logActivity(req, 'ai_memory_list', { limit, total: sorted.length });
+    return { handled: true, action: action.type, changed: false, response: `Here are your latest ${Math.min(limit, sorted.length)} memories:\n${lines.join('\n')}` };
+  }
+
+  if (action.type === 'memory_stats') {
+    const byVault = {
+      learning: allMemories.filter((m) => m.vault_type === 'learning').length,
+      cultural: allMemories.filter((m) => m.vault_type === 'cultural').length,
+      future: allMemories.filter((m) => m.vault_type === 'future').length,
+      personal: allMemories.filter((m) => m.vault_type === 'personal').length
+    };
+    const favorites = allMemories.filter((m) => Boolean(m.isFavorite)).length;
+    const important = allMemories.filter((m) => Boolean(m.is_important)).length;
+    logActivity(req, 'ai_memory_stats');
+    return {
+      handled: true,
+      action: action.type,
+      changed: false,
+      response: `Memory summary: total ${allMemories.length}, learning ${byVault.learning}, cultural ${byVault.cultural}, future ${byVault.future}, personal ${byVault.personal}, important ${important}, favorites ${favorites}.`
+    };
+  }
+
+  if (action.type === 'search_memories') {
+    const query = String(action.query || '').trim();
+    if (!query) {
+      return { handled: true, action: action.type, changed: false, response: 'Tell me what to search. Example: "search memories for calculus".' };
+    }
+    const matches = getRelevantMemories(query, allMemories, Math.max(1, Math.min(20, Number(action.limit) || 8)));
+    if (!matches.length) {
+      return { handled: true, action: action.type, changed: false, response: `No memory matched "${query}".` };
+    }
+    const lines = matches.map((m, i) => `${i + 1}. [${m.vault_type}] ${m.title} (id: ${m.id})`);
+    logActivity(req, 'ai_memory_search', { query, matches: matches.length });
+    return { handled: true, action: action.type, changed: false, response: `Found ${matches.length} matching memories:\n${lines.join('\n')}` };
+  }
+
+  if (action.type === 'create_memory') {
+    const title = String(action.title || '').trim();
+    const content = String(action.content || '').trim();
+    const vaultType = normalizeVaultType(action.vaultType);
+    const isImportant = Boolean(action.important);
+
+    if (!content) {
+      return {
+        handled: true,
+        action: action.type,
+        changed: false,
+        response: 'I need memory content to save. Example: add memory; title: Lesson; content: I learned active recall; vault: learning'
+      };
+    }
+    if (vaultType === 'personal' && !isPersonalUnlocked(req)) {
+      return {
+        handled: true,
+        action: action.type,
+        changed: false,
+        response: 'Personal vault is locked. Unlock your personal PIN first, then ask again.'
+      };
+    }
+
+    if (!Array.isArray(data.memories[req.user.email])) data.memories[req.user.email] = [];
+    const memory = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      title: title || content.slice(0, 60),
+      content,
+      is_important: isImportant,
+      vault_type: vaultType,
+      timestamp: new Date(),
+      user_email: req.user.email
+    };
+    data.memories[req.user.email].push(memory);
+    saveData(data);
+    logActivity(req, 'ai_memory_create', { id: memory.id, vault_type: memory.vault_type, is_important: isImportant });
+    return {
+      handled: true,
+      action: action.type,
+      changed: true,
+      response: `Saved memory "${memory.title}" in ${memory.vault_type} vault (id: ${memory.id}).`
+    };
+  }
+
+  if (action.type === 'delete_memory') {
+    const targetMemory = resolveMemoryByTarget(allMemories, action.target || {});
+    if (!targetMemory) {
+      return {
+        handled: true,
+        action: action.type,
+        changed: false,
+        response: 'I could not find that memory. Use id: <memory-id> or include the exact title in quotes.'
+      };
+    }
+    if (targetMemory.vault_type === 'personal' && !isPersonalUnlocked(req)) {
+      return {
+        handled: true,
+        action: action.type,
+        changed: false,
+        response: 'Personal vault is locked. Unlock your personal PIN before deleting personal memories.'
+      };
+    }
+
+    const list = data.memories[req.user.email] || [];
+    const index = list.findIndex((m) => String(m.id) === String(targetMemory.id));
+    if (index === -1) {
+      return { handled: true, action: action.type, changed: false, response: 'Memory no longer exists.' };
+    }
+    const removed = list[index];
+    list.splice(index, 1);
+    saveData(data);
+    logActivity(req, 'ai_memory_delete', { id: removed.id, vault_type: removed.vault_type });
+    return { handled: true, action: action.type, changed: true, response: `Deleted memory "${removed.title}" (id: ${removed.id}).` };
+  }
+
+  if (action.type === 'favorite_memory') {
+    const targetMemory = resolveMemoryByTarget(allMemories, action.target || {});
+    if (!targetMemory) {
+      return {
+        handled: true,
+        action: action.type,
+        changed: false,
+        response: 'I could not find that memory to update favorite status. Use id: <memory-id> or quote the title.'
+      };
+    }
+    if (targetMemory.vault_type === 'personal' && !isPersonalUnlocked(req)) {
+      return {
+        handled: true,
+        action: action.type,
+        changed: false,
+        response: 'Personal vault is locked. Unlock your personal PIN before changing personal favorites.'
+      };
+    }
+    targetMemory.isFavorite = Boolean(action.favorite);
+    saveData(data);
+    logActivity(req, 'ai_memory_favorite', { id: targetMemory.id, value: targetMemory.isFavorite });
+    return {
+      handled: true,
+      action: action.type,
+      changed: true,
+      response: `${targetMemory.isFavorite ? 'Added' : 'Removed'} favorite for "${targetMemory.title}" (id: ${targetMemory.id}).`
+    };
+  }
+
+  return { handled: false };
+}
+
 function generateFallbackResponse(message, userMemories, userName, relevantMemories = [], relevantKnowledge = []) {
   const lowerMessage = String(message || '').toLowerCase();
+  const appRelated = isAppRelatedQuestion(lowerMessage);
   const learningCount = userMemories.filter((m) => m.vault_type === 'learning').length;
   const culturalCount = userMemories.filter((m) => m.vault_type === 'cultural').length;
   const personalCount = userMemories.filter((m) => m.vault_type === 'personal').length;
@@ -1698,7 +3167,7 @@ function generateFallbackResponse(message, userMemories, userName, relevantMemor
     ].join(' ');
   }
 
-  if (topKnowledge?.answer && !userDataIntent) {
+  if (topKnowledge?.answer && !userDataIntent && appRelated) {
     return topKnowledge.answer;
   }
 
@@ -1742,106 +3211,353 @@ function generateFallbackResponse(message, userMemories, userName, relevantMemor
     return `I found related memories: ${relevantTitles.join(', ')}. Ask a follow-up and I can summarize them.`;
   }
 
-  return 'I can answer general Memory Vault questions, help you write better entries, and assist with memory search and summaries. Ask me what you want to do next.';
+  if (!appRelated) {
+    if (isCodingQuestion(lowerMessage)) {
+      return [
+        'Great question. Start coding in 5 steps:',
+        '1) Pick one language (Python is easiest to start).',
+        '2) Learn basics: variables, if/else, loops, functions.',
+        '3) Build tiny projects (calculator, to-do app, simple API).',
+        '4) Practice daily on small problems and read error messages carefully.',
+        '5) Use Git/GitHub to track progress.',
+        'If you want, I can give you a 14-day beginner coding plan and your first project now.'
+      ].join(' ');
+    }
+    return 'I can still help. Ask your question in one clear sentence, and include topic + goal (for example: "Explain black holes simply" or "Write Python code to sort a list").';
+  }
+
+  return 'I can answer general questions and Memory Vault questions. Ask me anything directly, and if you want app-specific help I can also guide memory saving, search, and summaries.';
 }
 
-async function askOpenAI(message, userName, memoryContextText, knowledgeContextText) {
+function isCodingQuestion(text) {
+  const t = String(text || '').toLowerCase();
+  return /\b(code|coding|program|programming|developer|python|javascript|java|c\+\+|c#|sql|html|css|api|bug|debug|algorithm)\b/.test(t);
+}
+
+function isAppRelatedQuestion(text) {
+  const t = String(text || '').toLowerCase();
+  return /\b(memory vault|vault|memory|memories|auth|signin|sign in|signup|sign up|password|pin|diary|learning|cultural|future|admin|export|backup|dashboard|ai assistant)\b/.test(t);
+}
+
+async function askGeneralKnowledgeFallback(message) {
+  const query = String(message || '').trim();
+  if (!query) return '';
+
+  try {
+    const wikiTopic = query
+      .replace(/^(what is|who is|where is|when is|why is|how does|how do|define|explain)\s+/i, '')
+      .replace(/[?!.]+$/g, '')
+      .trim();
+    if (wikiTopic) {
+      const wikiResp = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTopic)}`,
+        { method: 'GET', signal: AbortSignal.timeout(8000) }
+      );
+      if (wikiResp.ok) {
+        const wiki = await wikiResp.json().catch(() => ({}));
+        const extract = String(wiki?.extract || '').trim();
+        if (extract) return extract;
+      }
+    }
+  } catch {}
+
+  try {
+    const response = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+      { method: 'GET', signal: AbortSignal.timeout(8000) }
+    );
+    if (!response.ok) return '';
+    const data = await response.json().catch(() => ({}));
+
+    const abstract = String(data?.AbstractText || '').trim();
+    if (abstract) return abstract;
+
+    const heading = String(data?.Heading || '').trim();
+    const firstRelated = Array.isArray(data?.RelatedTopics)
+      ? data.RelatedTopics.find((item) => String(item?.Text || '').trim())
+      : null;
+    const relatedText = String(firstRelated?.Text || '').trim();
+    if (relatedText) {
+      return heading ? `${heading}: ${relatedText}` : relatedText;
+    }
+  } catch {}
+
+  return '';
+}
+
+async function buildWebContextForAI(message) {
+  const query = String(message || '').trim();
+  if (!query) return '';
+
+  const contextParts = [];
+  const cleanedTopic = query
+    .replace(/^(what is|who is|where is|when is|why is|how does|how do|define|explain)\s+/i, '')
+    .replace(/[?!.]+$/g, '')
+    .trim();
+
+  try {
+    if (cleanedTopic) {
+      const wikiResp = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanedTopic)}`,
+        { method: 'GET', signal: AbortSignal.timeout(7000) }
+      );
+      if (wikiResp.ok) {
+        const wiki = await wikiResp.json().catch(() => ({}));
+        const title = String(wiki?.title || cleanedTopic).trim();
+        const extract = String(wiki?.extract || '').trim();
+        const url = String(wiki?.content_urls?.desktop?.page || '').trim();
+        if (extract) {
+          contextParts.push(
+            [
+              `Source: Wikipedia (${title})`,
+              `Summary: ${extract}`,
+              url ? `URL: ${url}` : ''
+            ].filter(Boolean).join('\n')
+          );
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    const ddgResp = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+      { method: 'GET', signal: AbortSignal.timeout(7000) }
+    );
+    if (ddgResp.ok) {
+      const ddg = await ddgResp.json().catch(() => ({}));
+      const heading = String(ddg?.Heading || '').trim();
+      const abstract = String(ddg?.AbstractText || '').trim();
+      const abstractUrl = String(ddg?.AbstractURL || '').trim();
+      if (abstract) {
+        contextParts.push(
+          [
+            `Source: DuckDuckGo Instant Answer${heading ? ` (${heading})` : ''}`,
+            `Summary: ${abstract}`,
+            abstractUrl ? `URL: ${abstractUrl}` : ''
+          ].filter(Boolean).join('\n')
+        );
+      }
+    }
+  } catch {}
+
+  if (!contextParts.length) return '';
+  return contextParts.join('\n\n');
+}
+
+function normalizeAiMode(mode) {
+  const raw = String(mode || '').trim().toLowerCase();
+  if (raw === 'coding' || raw === 'memory') return raw;
+  return 'general';
+}
+
+async function askOpenAI(message, userName, memoryContextText, knowledgeContextText, appCapabilityText, mode = 'general', webContextText = '') {
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
     throw new Error('OPENAI_API_KEY is not configured');
   }
+  const aiMode = normalizeAiMode(mode);
 
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${openaiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      input: [
-        {
-          role: 'system',
-          content: [
+  const systemPrompt = [
+    'You are Memory Vault AI, a highly capable assistant powered by advanced models like GPT-4o, Gemini, and Codex.',
+    'You serve two roles: a general-purpose AI that can answer any question about science, history, coding, or life, and a dedicated expert on the Memory Vault app.',
+    'When the user asks general questions, provide clear, accurate, and detailed answers just like ChatGPT.',
+    'When the user asks about their memories or how to use the app, use the provided memory context and app knowledge to give personalized guidance.',
+    'For coding tasks, provide high-quality, secure, and runnable code with comments.',
+    'If the user is logged in, you can help them manage their memories (add, find, list, stats).',
+    `User name: ${userName}.`,
+    'Knowledge cutoff: 2024-10. Current date: 2026-03-01.',
+    'Prioritize being helpful, human-like, and versatile. Never say you can ONLY answer Memory Vault questions.'
+  ].join(' ');
+
+  const modelCandidates = [
+    OPENAI_MODEL,
+    'gpt-4.1-mini',
+    'gpt-4o-mini'
+  ].filter((m, i, arr) => Boolean(m) && arr.indexOf(m) === i);
+
+  const errors = [];
+
+  for (const model of modelCandidates) {
+    try {
+      const response = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          input: [
             {
-              type: 'input_text',
-              text: [
-                'You are the Memory Vault assistant.',
-                'Answer Memory Vault product questions using the provided verified knowledge section.',
-                'Answer user-specific questions using the provided memory context.',
-                'If a question is not related to Memory Vault, politely refuse and ask for a Memory Vault question.',
-                'If the user appears new or has zero memories, provide a short getting-started guide.',
-                'If data is missing, state that clearly and avoid guessing.',
-                'Be concise, accurate, and practical.',
-                `The user name is: ${userName}.`,
-                'Keep responses under 140 words unless the user asks for detail.'
-              ].join(' ')
+              role: 'system',
+              content: [{ type: 'input_text', text: systemPrompt }]
+            },
+            {
+              role: 'system',
+              content: [{ type: 'input_text', text: `Memory context:\n${memoryContextText}` }]
+            },
+            {
+              role: 'system',
+              content: [{ type: 'input_text', text: `${knowledgeContextText}` }]
+            },
+            {
+              role: 'system',
+              content: [{ type: 'input_text', text: `${appCapabilityText}` }]
+            },
+            ...(webContextText
+              ? [
+                  {
+                    role: 'system',
+                    content: [{
+                      type: 'input_text',
+                      text: `Live web context (use as supplemental evidence, and prefer caution if uncertain):\n${webContextText}`
+                    }]
+                  }
+                ]
+              : []),
+            {
+              role: 'user',
+              content: [{ type: 'input_text', text: String(message || '') }]
             }
-          ]
-        },
-        {
-          role: 'system',
-          content: [{ type: 'input_text', text: `Memory context:\n${memoryContextText}` }]
-        },
-        {
-          role: 'system',
-          content: [{ type: 'input_text', text: `${knowledgeContextText}` }]
-        },
-        {
-          role: 'user',
-          content: [{ type: 'input_text', text: String(message || '') }]
-        }
-      ],
-      max_output_tokens: 240
-    })
-  });
+          ],
+          max_output_tokens: 320
+        })
+      });
 
-  const payload = await response.json();
-  if (!response.ok) {
-    const messageText = payload?.error?.message || `OpenAI HTTP ${response.status}`;
-    throw new Error(messageText);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const messageText = payload?.error?.message || `OpenAI HTTP ${response.status}`;
+        throw new Error(messageText);
+      }
+
+      const outputText = String(payload?.output_text || '').trim();
+      if (!outputText) {
+        throw new Error('OpenAI returned an empty response');
+      }
+      return outputText;
+    } catch (error) {
+      errors.push(`responses:${model}:${error.message}`);
+    }
   }
 
-  const outputText = payload?.output_text?.trim();
-  if (!outputText) {
-    throw new Error('OpenAI returned an empty response');
+  // Compatibility fallback for environments where chat/completions is available but responses fails.
+  for (const model of modelCandidates) {
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'system', content: `Memory context:\n${memoryContextText}` },
+            { role: 'system', content: `${knowledgeContextText}` },
+            { role: 'system', content: `${appCapabilityText}` },
+            ...(webContextText ? [{ role: 'system', content: `Live web context:\n${webContextText}` }] : []),
+            { role: 'user', content: String(message || '') }
+          ],
+          temperature: 0.4,
+          max_tokens: 320
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const messageText = payload?.error?.message || `OpenAI HTTP ${response.status}`;
+        throw new Error(messageText);
+      }
+      const outputText = String(payload?.choices?.[0]?.message?.content || '').trim();
+      if (!outputText) throw new Error('OpenAI returned an empty completion');
+      return outputText;
+    } catch (error) {
+      errors.push(`chat:${model}:${error.message}`);
+    }
   }
 
-  return outputText;
+  throw new Error(errors.join(' | '));
 }
 
-app.post('/api/ai/chat', verifyToken, async (req, res) => {
+app.post('/api/ai/chat', async (req, res) => {
   try {
+    attachUserFromTokenIfPresent(req);
     const { message } = req.body;
+    const aiMode = normalizeAiMode(req.body?.mode);
     if (!message || !String(message).trim()) {
       return res.status(400).json({ success: false, message: 'Message is required' });
     }
-    if (!isMemoryVaultRelatedQuestion(message)) {
-      return res.json({
-        success: true,
-        response: getOutOfScopeResponse(),
-        source: 'policy',
-        policy: 'memory-vault-only'
-      });
-    }
 
     const data = loadData();
-    const userMemories = data.memories[req.user.email] || [];
-    const user = data.users.find((u) => u.email === req.user.email);
-    const userName = user?.name || 'Friend';
+    const userEmail = normalizeEmail(req.user?.email || '');
+    const isAuthed = Boolean(userEmail);
+    const aiAction = parseAIAssistantAction(message);
+    if (aiAction) {
+      if (!isAuthed) {
+        return res.json({
+          success: true,
+          response: 'I can answer any question right now. To save, list, delete, or edit memories, please sign in first.',
+          source: 'assistant-auth-required'
+        });
+      }
+      const actionResult = executeAIAssistantAction(req, aiAction, data);
+      if (actionResult.handled) {
+        return res.json({
+          success: true,
+          response: actionResult.response,
+          source: 'assistant-action',
+          action: actionResult.action,
+          changed: Boolean(actionResult.changed)
+        });
+      }
+    }
+
+    const helpIntent = parseStudentHelpIntent(message);
+    if (helpIntent) {
+      const helpResponse = executeStudentHelpIntent(helpIntent, data, userEmail);
+      if (helpResponse) {
+        if (isAuthed) logActivity(req, 'ai_help_intent', { intent: helpIntent.type });
+        return res.json({
+          success: true,
+          response: helpResponse,
+          source: 'assistant-help',
+          intent: helpIntent.type
+        });
+      }
+    }
+
+    const userMemories = isAuthed ? (data.memories[userEmail] || []) : [];
+    const user = isAuthed ? getUserRecord(data, userEmail) : null;
+    const userName = user?.name || (isAuthed ? 'Friend' : 'Guest');
     const { relevantMemories, contextText } = buildMemoryContextForAI(message, userMemories);
     const { relevantKnowledge, contextText: knowledgeContextText } = buildKnowledgeContextForAI(message);
+    const appCapabilityText = buildAppCapabilityContext();
+    const webContextText = await buildWebContextForAI(message);
 
     try {
-      const aiMessage = await askOpenAI(message, userName, contextText, knowledgeContextText);
-      logActivity(req, 'ai_chat', { source: 'openai' });
+      const aiMessage = await askOpenAI(message, userName, contextText, knowledgeContextText, appCapabilityText, aiMode, webContextText);
+      if (isAuthed) logActivity(req, 'ai_chat', { source: 'openai' });
       return res.json({
         success: true,
         response: aiMessage,
         source: 'openai',
-        model: OPENAI_MODEL
+        model: OPENAI_MODEL,
+        mode: aiMode
       });
     } catch (openaiError) {
+      const genericAnswer = await askGeneralKnowledgeFallback(message);
+      if (genericAnswer) {
+        if (isAuthed) logActivity(req, 'ai_chat', { source: 'duckduckgo_fallback' });
+        return res.json({
+          success: true,
+          response: genericAnswer,
+          source: 'duckduckgo-fallback',
+          note: `OpenAI unavailable (${openaiError.message})`,
+          mode: aiMode
+        });
+      }
+
       const fallbackResponse = generateFallbackResponse(
         message,
         userMemories,
@@ -1854,16 +3570,30 @@ app.post('/api/ai/chat', verifyToken, async (req, res) => {
         response: fallbackResponse,
         source: 'fallback',
         note: `Using local AI (${openaiError.message})`,
-        knowledge_hits: relevantKnowledge.length
+        knowledge_hits: relevantKnowledge.length,
+        mode: aiMode
       });
     }
   } catch (error) {
+    attachUserFromTokenIfPresent(req);
     const data = loadData();
-    const userMemories = data.memories[req.user.email] || [];
-    const user = data.users.find((u) => u.email === req.user.email);
-    const userName = user?.name || 'Friend';
+    const userEmail = normalizeEmail(req.user?.email || '');
+    const isAuthed = Boolean(userEmail);
+    const userMemories = isAuthed ? (data.memories[userEmail] || []) : [];
+    const user = isAuthed ? getUserRecord(data, userEmail) : null;
+    const userName = user?.name || (isAuthed ? 'Friend' : 'Guest');
     const relevantMemories = getRelevantMemories(req.body?.message || '', userMemories, 8);
     const { relevantKnowledge } = buildKnowledgeContextForAI(req.body?.message || '');
+    const genericAnswer = await askGeneralKnowledgeFallback(req.body?.message || '');
+    if (genericAnswer) {
+      return res.json({
+        success: true,
+        response: genericAnswer,
+        source: 'duckduckgo-fallback',
+        note: `Server fallback (${error.message})`
+      });
+    }
+
     const fallbackResponse = generateFallbackResponse(
       req.body?.message || '',
       userMemories,
@@ -1882,30 +3612,7 @@ app.post('/api/ai/chat', verifyToken, async (req, res) => {
   }
 });
 
-app.get('/api/admin/activities', verifyToken, verifyAdminAccess, (req, res) => {
-  const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 100));
-  const data = loadAdminData();
-  const activities = [...data.activities].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, limit);
-  logActivity(req, 'admin_activities_view', { limit });
-  return res.json({ success: true, count: activities.length, data: activities });
-});
-
-app.get('/api/admin/stats', verifyToken, verifyAdminAccess, (req, res) => {
-  const data = loadAdminData();
-  const activities = data.activities || [];
-  const byAction = activities.reduce((acc, item) => {
-    const key = item.action || 'unknown';
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-
-  return res.json({
-    success: true,
-    totalActivities: activities.length,
-    byAction,
-    latest: activities.length ? activities[activities.length - 1].timestamp : null
-  });
-});
+// Removed admin endpoints
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'Server is running' });
@@ -1929,11 +3636,12 @@ app.get('/api/debug/config', (req, res) => {
     },
     endpoints: {
       health: '/api/health',
-      auth: ['/api/auth/signup', '/api/auth/signin', '/api/auth/forgot-password', '/api/auth/reset-password'],
+      auth: ['/api/auth/signup', '/api/auth/signin', '/api/auth/oauth', '/api/auth/forgot-password', '/api/auth/reset-password'],
+      session: '/api/session/ping',
       memories: '/api/memories',
       ai: '/api/ai/chat',
       personal: ['/api/personal/pin/status', '/api/personal/pin/setup', '/api/personal/pin/verify'],
-      admin: ['/api/admin/activities', '/api/admin/stats']
+      admin: ['/api/admin/activities', '/api/admin/stats', '/api/admin/users', '/api/admin/active-users']
     },
     admin: {
       configured: Boolean(ADMIN_API_KEY),

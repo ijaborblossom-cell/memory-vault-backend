@@ -1,0 +1,189 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Memory Vault Admin Local</title>
+  <style>
+    :root {
+      --bg: #edf2fb;
+      --card: #0c2252;
+      --card2: #0a1b44;
+      --line: rgba(137, 176, 255, .28);
+      --text: #eaf2ff;
+      --muted: #aac0e1;
+      --ok: #84e4a7;
+      --warn: #ffd889;
+      --primary: linear-gradient(135deg,#4f62ff,#6a35ff);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,Segoe UI,system-ui,sans-serif;background:var(--bg);min-height:100vh;padding:1rem;color:var(--text)}
+    .shell{max-width:1100px;margin:0 auto}
+    .login-shell{max-width:430px;margin:2.2rem auto}
+    .auth-card{background:linear-gradient(175deg,#29448d 0%,#102f6a 42%,#18497e 100%);border:1px solid rgba(93,120,188,.45);border-radius:22px;padding:.95rem;box-shadow:0 24px 44px rgba(16,25,54,.28)}
+    .auth-inner{background:linear-gradient(160deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:14px;padding:1rem}
+    h1,h2,p{margin:0}
+    .title{text-align:center;font-size:1.7rem;font-weight:800;letter-spacing:-.02em}
+    .sub{text-align:center;color:var(--muted);margin:.45rem 0 .95rem}
+    .group{margin-bottom:.62rem}
+    label{display:block;font-size:.8rem;color:#bfd2ef;margin-bottom:.22rem}
+    input{width:100%;height:44px;border-radius:10px;border:1px solid rgba(78,114,184,.75);background:#041843;color:var(--text);padding:0 .8rem;outline:none}
+    input::placeholder{color:#8eaed3}
+    .btn{height:44px;border-radius:10px;border:1px solid var(--line);background:#12336a;color:var(--text);font-weight:700;cursor:pointer;padding:0 .9rem}
+    .btn.primary{border:none;background:var(--primary)}
+    .row{display:flex;gap:.5rem;flex-wrap:wrap}
+    .status{margin-top:.65rem;font-size:.9rem;color:var(--muted)}
+    .ok{color:var(--ok)}
+    .warn{color:var(--warn)}
+
+    .dash{display:none}
+    .dash.show{display:block}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.7rem}
+    .panel{background:linear-gradient(165deg,rgba(12,34,82,.95),rgba(8,22,58,.95));border:1px solid var(--line);border-radius:14px;padding:.85rem}
+    .stats{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:.6rem;margin-top:.65rem}
+    .k{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+    .v{font-size:1.38rem;font-weight:800;margin-top:.22rem}
+    table{width:100%;border-collapse:collapse;min-width:860px}
+    th,td{text-align:left;padding:.6rem .7rem;border-bottom:1px solid rgba(147,190,255,.14)}
+    th{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .table-wrap{overflow:auto;max-height:58vh;margin-top:.55rem}
+    @media (max-width:940px){.stats{grid-template-columns:repeat(2,minmax(130px,1fr))}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="login-shell" id="login-view">
+      <div class="auth-card">
+        <div class="auth-inner">
+          <h1 class="title">Admin Sign In</h1>
+          <p class="sub">Localhost owner access for realtime webapp monitoring</p>
+          <div class="group"><label for="api-base">API Base</label><input id="api-base" value="https://memory-vault-coral-seven.vercel.app/api"></div>
+          <div class="group"><label for="identifier">Owner Email or Username</label><input id="identifier" placeholder="owner@email.com"></div>
+          <div class="group"><label for="password">Owner Password</label><input id="password" type="password" placeholder="Enter password"></div>
+          <div class="group"><label for="admin-key">Admin API Key</label><input id="admin-key" placeholder="Enter admin key"></div>
+          <button class="btn primary" onclick="signInAndStart()" style="width:100%">Continue</button>
+          <div id="status" class="status">Not connected.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="dash" id="dashboard-view">
+      <div class="top">
+        <h2>Memory Vault Admin Realtime</h2>
+        <div class="row">
+          <button class="btn" onclick="refreshNow()">Refresh</button>
+          <button class="btn" onclick="clearSession()">Sign Out</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content:space-between">
+          <span style="color:var(--muted)">Live activity stream (no vault content)</span>
+          <span id="last-sync" style="color:var(--muted)">Last sync: -</span>
+        </div>
+
+        <div class="stats">
+          <article class="panel"><div class="k">Registered Users</div><div class="v" id="stat-users">0</div></article>
+          <article class="panel"><div class="k">Active Now</div><div class="v" id="stat-active">0</div></article>
+          <article class="panel"><div class="k">Past 24h Sign-ins</div><div class="v" id="stat-signins">0</div></article>
+          <article class="panel"><div class="k">Past 24h Sign-ups</div><div class="v" id="stat-signups">0</div></article>
+          <article class="panel"><div class="k">Past 24h Logouts</div><div class="v" id="stat-logouts">0</div></article>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Method</th><th>Path</th><th>IP</th></tr></thead>
+            <tbody id="activity-body"><tr><td colspan="6">No activity yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const state = { token: localStorage.getItem('mv_admin_token') || '', timer: null };
+    const el = (id) => document.getElementById(id);
+
+    function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+    function setStatus(msg,type){const s=el('status');s.textContent=msg;s.className=`status ${type||''}`;}
+    function base(){return String(el('api-base').value||'').trim().replace(/\/+$/,'');}
+    function adminHeaders(){return {'Authorization':`Bearer ${state.token}`,'x-admin-key':String(el('admin-key').value||'').trim()};}
+    async function parseJson(r){const t=await r.text();try{return JSON.parse(t);}catch{return {success:false,message:'Invalid JSON response.'};}}
+
+    async function signInAndStart(){
+      const identifier=String(el('identifier').value||'').trim();
+      const password=String(el('password').value||'');
+      const api=base();
+      if(!identifier||!password){setStatus('Enter owner credentials.','warn');return;}
+      if(!api){setStatus('Enter API base URL.','warn');return;}
+      setStatus('Signing in...');
+      const res=await fetch(`${api}/auth/signin`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identifier,password})}).catch(()=>null);
+      if(!res){setStatus('Network error while signing in.','warn');return;}
+      const data=await parseJson(res);
+      if(!res.ok||!data.success||!data.token){setStatus(data.message||'Sign-in failed.','warn');return;}
+      state.token=data.token;
+      localStorage.setItem('mv_admin_token',state.token);
+      localStorage.setItem('mv_admin_api_base',api);
+      el('login-view').style.display='none';
+      el('dashboard-view').classList.add('show');
+      await refreshNow();
+      startRealtime();
+    }
+
+    async function adminGet(path){
+      const res=await fetch(`${base()}${path}`,{headers:adminHeaders()});
+      const data=await parseJson(res);
+      if(!res.ok||!data.success) throw new Error(data.message||`HTTP ${res.status}`);
+      return data;
+    }
+
+    function countPast24h(rows,actions){
+      const dayAgo=Date.now()-24*60*60*1000; const set=new Set(actions);
+      return rows.filter((r)=>{const ts=r.timestamp?new Date(r.timestamp).getTime():0;return Number.isFinite(ts)&&ts>=dayAgo&&set.has(String(r.action||'').toLowerCase());}).length;
+    }
+
+    function renderActivities(rows){
+      const body=el('activity-body');
+      if(!rows.length){body.innerHTML='<tr><td colspan="6">No activity records.</td></tr>';return;}
+      body.innerHTML=rows.map((r)=>{const when=r.timestamp?new Date(r.timestamp).toLocaleString():'-';return `<tr><td>${esc(when)}</td><td>${esc(r.email||'-')}</td><td>${esc(r.action||'-')}</td><td>${esc(r.method||'-')}</td><td>${esc(r.path||'-')}</td><td>${esc(r.ip||'-')}</td></tr>`;}).join('');
+    }
+
+    async function refreshNow(){
+      if(!state.token) return;
+      if(!String(el('admin-key').value||'').trim()){setStatus('Enter admin API key.','warn');return;}
+      try{
+        const [stats,activities]=await Promise.all([adminGet('/admin/stats'),adminGet('/admin/activities?limit=150')]);
+        const list=Array.isArray(activities.data)?activities.data:[];
+        el('stat-users').textContent=String(stats.data?.users?.total??0);
+        el('stat-active').textContent=String(stats.data?.users?.activeNow??0);
+        el('stat-signins').textContent=String(countPast24h(list,['auth_signin','auth_oauth_signin']));
+        el('stat-signups').textContent=String(countPast24h(list,['auth_signup','auth_oauth_signup']));
+        el('stat-logouts').textContent=String(countPast24h(list,['auth_logout']));
+        renderActivities(list);
+        el('last-sync').textContent=`Last sync: ${new Date().toLocaleTimeString()}`;
+      }catch(error){setStatus(error.message||'Failed to refresh admin data.','warn');}
+    }
+
+    function startRealtime(){if(state.timer)clearInterval(state.timer);state.timer=setInterval(refreshNow,10000);}
+
+    function clearSession(){
+      if(state.timer) clearInterval(state.timer);
+      state.timer=null;
+      state.token='';
+      localStorage.removeItem('mv_admin_token');
+      el('dashboard-view').classList.remove('show');
+      el('login-view').style.display='block';
+      setStatus('Signed out.');
+    }
+
+    (function init(){
+      const savedApi=localStorage.getItem('mv_admin_api_base');
+      if(savedApi) el('api-base').value=savedApi;
+      if(state.token){
+        el('login-view').style.display='none';
+        el('dashboard-view').classList.add('show');
+      }
+    })();
+  </script>
+</body>
+</html>

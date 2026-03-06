@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel='manifest' href='manifest.json'><meta name='theme-color' content='#0a0a0c'><meta name='mobile-web-app-capable' content='yes'><meta name='apple-mobile-web-app-status-bar-style' content='black-translucent'><title>Memory Vault Auth</title>`n  <script src="capacitor.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer onerror="this.remove()"></script>
+  <script src="https://connect.facebook.net/en_US/sdk.js" async defer crossorigin="anonymous" onerror="this.remove()"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #d9dfea;
+      --card: #0a1f4f;
+      --card-2: #0d2864;
+      --line: rgba(136, 180, 255, 0.3);
+      --text: #eaf3ff;
+      --muted: #a7bddc;
+      --primary: linear-gradient(135deg, #5368ff, #6d36ff);
+      --primary-text: #edf2ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+    }
+    .auth-wrap {
+      width: min(420px, 100%);
+      background: linear-gradient(180deg, #27397f 0%, #15346d 40%, #1d4f86 100%);
+      border-radius: 22px;
+      border: 1px solid rgba(84, 118, 196, 0.45);
+      box-shadow: 0 28px 48px rgba(15, 23, 53, 0.32);
+      padding: 1rem;
+    }
+    .card {
+      background: linear-gradient(165deg, rgba(7, 24, 65, 0.95), rgba(6, 21, 58, 0.95));
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1rem;
+    }
+    h1 {
+      margin: 0;
+      text-align: center;
+      color: var(--text);
+      font-size: 1.85rem;
+      font-weight: 800;
+      letter-spacing: -.02em;
+    }
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      margin-top: .3rem;
+    }
+    .title-row h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 1.9rem;
+      font-weight: 800;
+      letter-spacing: -.02em;
+    }
+    .sub { margin: .5rem 0 1rem; color: var(--muted); text-align: center; }
+    .group { margin-bottom: .62rem; }
+    label { display: block; margin-bottom: .24rem; color: #bfd3ef; font-size: .82rem; }
+    input {
+      width: 100%;
+      height: 44px;
+      border-radius: 10px;
+      border: 1px solid rgba(73, 115, 193, 0.7);
+      background: #031740;
+      color: var(--text);
+      padding: 0 .82rem;
+      font-size: .95rem;
+      outline: none;
+    }
+    input::placeholder { color: #8dabd2; }
+    .password { position: relative; }
+    .eye {
+      position: absolute;
+      right: .35rem;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.1);
+      color: #d8e6ff;
+      cursor: pointer;
+    }
+    .cta {
+      width: 100%;
+      height: 44px;
+      border: none;
+      border-radius: 10px;
+      background: var(--primary);
+      color: var(--primary-text);
+      font-weight: 800;
+      font-size: 1rem;
+      margin-top: .2rem;
+      cursor: pointer;
+    }
+    .divider {
+      margin: .8rem 0 .65rem;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: .5rem;
+      align-items: center;
+      color: #9db2d0;
+      font-size: .85rem;
+    }
+    .divider::before,
+    .divider::after { content: ""; height: 1px; background: rgba(130, 162, 214, .45); }
+    .social {
+      display: grid;
+      gap: .5rem;
+    }
+    .social-btn {
+      width: 100%;
+      min-height: 42px;
+      border-radius: 10px;
+      border: 1px solid rgba(85, 125, 200, .7);
+      background: #0a2759;
+      color: #e2edff;
+      display: flex;
+      align-items: center;
+      gap: .62rem;
+      padding: 0 .78rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: .74rem;
+      background: rgba(255,255,255,.15);
+    }
+    .row {
+      margin-top: .65rem;
+      text-align: center;
+      color: #9fb4d2;
+      font-size: .9rem;
+    }
+    .link { color: #7f6dff; cursor: pointer; font-weight: 700; text-decoration: none; border: 0; background: none; }
+    .link:hover { text-decoration: underline; }
+    .msg { margin-top: .6rem; font-size: .88rem; }
+    .msg.error { color: #ffb2b2; }
+    .msg.ok { color: #8df0b3; }
+    .top-nav { margin-bottom: .85rem; display: flex; justify-content: space-between; align-items: center; }
+    .back { color: #dbe9ff; text-decoration: none; font-size: .9rem; }
+    .hide { display: none !important; }
+    @media (max-width: 560px) {
+      .auth-wrap { border-radius: 16px; padding: .72rem; }
+      .card { padding: .78rem; }
+      .title-row h2 { font-size: 1.55rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="auth-wrap">
+    <div class="card">
+      <div class="top-nav">
+        <a class="back" href="/">Back to App</a>
+        <div id="brand" style="color:#b8cff0;font-size:.86rem;">Memory Vault</div>
+      </div>
+      <div class="title-row"><h2 id="title">Sign In</h2></div>
+      <p class="sub" id="sub">Access your memory vault</p>
+
+      <form id="auth-form">
+        <div class="group hide" id="name-group">
+          <label for="name">Display Name</label>
+          <input id="name" type="text" placeholder="How your name appears">
+        </div>
+        <div class="group hide" id="username-group">
+          <label for="username">Username</label>
+          <input id="username" type="text" placeholder="e.g. blossom_01">
+        </div>
+        <div class="group">
+          <label for="email" id="id-label">Email or Username</label>
+          <input id="email" type="text" placeholder="your@email.com or username" required>
+        </div>
+        <div class="group" id="password-group">
+          <label for="password">Password</label>
+          <div class="password">
+            <input id="password" type="password" placeholder="Enter your password" required>
+            <button type="button" class="eye" id="eye" aria-label="Show password">&#128065;</button>
+          </div>
+        </div>
+        <button class="cta" id="submit-btn" type="submit">Sign In</button>
+      </form>
+
+      <div class="divider" id="social-divider">or sign in with</div>
+      <div class="social" id="social-grid">
+        <button class="social-btn" data-provider="google" type="button"><span class="icon">G</span>Continue with Google</button>
+        <button class="social-btn" data-provider="facebook" type="button"><span class="icon">f</span>Continue with Facebook</button>
+        <button class="social-btn" data-provider="microsoft" type="button"><span class="icon">M</span>Continue with Microsoft</button>
+      </div>
+
+      <div class="row"><span id="switch-text">Don't have an account?</span> <button class="link" id="switch-btn" type="button">Sign Up</button></div>
+      <div class="row"><button class="link" id="forgot-btn" type="button">Forgot Password?</button></div>
+      <div id="msg" class="msg"></div>
+    </div>
+  </main>
+
+  <script src="/netlify-config.js"></script>
+  <script src="/auth.js"></script>
+</body>
+</html>

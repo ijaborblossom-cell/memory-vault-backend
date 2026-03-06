@@ -1,0 +1,153 @@
+﻿<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>MemoryVault - Build Your Memory</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Playfair+Display:wght@700&amp;family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#38bdf8",
+                        "background-light": "#f8fafc",
+                        "background-dark": "#020617",
+                        "card-dark": "rgba(15, 23, 42, 0.6)",
+                        "card-light": "rgba(255, 255, 255, 0.7)",
+                    },
+                    fontFamily: {
+                        display: ["Playfair Display", "serif"],
+                        sans: ["Inter", "sans-serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "1rem",
+                    },
+                },
+            },
+        };
+    </script>
+<style>
+        .glass {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .bg-mesh {
+            background: radial-gradient(at 0% 0%, hsla(210,100%,15%,1) 0, transparent 50%),
+                        radial-gradient(at 50% 0%, hsla(190,100%,10%,1) 0, transparent 50%),
+                        radial-gradient(at 100% 0%, hsla(220,100%,12%,1) 0, transparent 50%);
+        }
+        .material-symbols-rounded {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-rounded.filled {
+            font-variation-settings: 'FILL' 1;
+        }
+        body {
+          min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-sans text-slate-900 dark:text-slate-100 min-h-screen flex flex-col">
+<div class="fixed inset-0 z-0 bg-mesh opacity-40 dark:opacity-100 pointer-events-none"></div>
+<header class="sticky top-0 z-30 flex items-center justify-between px-6 py-4 glass bg-white/30 dark:bg-slate-950/40 border-b border-slate-200/20 dark:border-slate-800/30">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-gradient-to-br from-primary to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
+<span class="material-symbols-rounded text-white filled">psychology</span>
+</div>
+<h1 class="text-xl font-semibold tracking-tight">MemoryVault</h1>
+</div>
+<button class="w-10 h-10 rounded-full flex items-center justify-center bg-slate-200/50 dark:bg-slate-800/50 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
+<span class="material-symbols-rounded text-xl">settings</span>
+</button>
+</header>
+<main class="relative z-10 flex-1 overflow-y-auto px-5 py-6 space-y-6 pb-32">
+<div class="relative group">
+<span class="material-symbols-rounded absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors">search</span>
+<input class="w-full pl-12 pr-4 py-3.5 bg-white/40 dark:bg-slate-900/60 border border-slate-200/30 dark:border-slate-800/50 rounded-2xl glass focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all placeholder:text-slate-500" placeholder="Search notes, lessons, and reflections..." type="text"/>
+</div>
+<div>
+<span class="px-4 py-1.5 rounded-full bg-slate-200/50 dark:bg-slate-800/60 text-sm font-medium border border-white/20 dark:border-slate-700/50">Good afternoon</span>
+</div>
+<section class="relative overflow-hidden p-8 rounded-3xl bg-gradient-to-br from-emerald-500/20 to-primary/20 dark:from-emerald-900/40 dark:to-primary/40 border border-white/20 dark:border-slate-700/30 glass">
+<div class="relative z-10 text-center space-y-4">
+<h2 class="text-4xl font-display uppercase leading-[1.1] dark:text-white">Build Your Memory,<br/>One Day At A Time</h2>
+<p class="text-slate-600 dark:text-slate-300 leading-relaxed max-w-[280px] mx-auto">
+                    Keep class notes, revision insights, and personal reflections in one calm space you can trust.
+                </p>
+<div class="pt-4">
+<button class="bg-gradient-to-r from-primary to-cyan-400 hover:scale-[1.02] transition-transform text-slate-950 font-bold px-8 py-4 rounded-2xl shadow-xl shadow-primary/30 flex items-center gap-2 mx-auto">
+<span class="material-symbols-rounded filled">smart_toy</span>
+                        Open Assistant
+                    </button>
+</div>
+</div>
+<div class="absolute -top-10 -right-10 w-40 h-40 bg-primary/20 blur-3xl rounded-full"></div>
+<div class="absolute -bottom-10 -left-10 w-40 h-40 bg-emerald-500/20 blur-3xl rounded-full"></div>
+</section>
+<section class="p-6 rounded-3xl bg-white/40 dark:bg-slate-900/40 border border-white/20 dark:border-slate-800/50 glass">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500 dark:text-slate-400 mb-2">Current Streak</h3>
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-bold dark:text-white">1 days</span>
+<span class="material-symbols-rounded text-orange-400 filled text-2xl">local_fire_department</span>
+</div>
+</div>
+</div>
+<p class="mt-3 text-sm text-slate-500 dark:text-slate-400">Start today by saving one meaningful memory.</p>
+</section>
+<section class="p-6 rounded-3xl bg-white/40 dark:bg-slate-900/40 border border-white/20 dark:border-slate-800/50 glass">
+<h3 class="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500 dark:text-slate-400 mb-3">Today's Prompt</h3>
+<p class="text-lg font-medium dark:text-slate-200 mb-6 leading-snug">What is one idea worth revisiting this weekend?</p>
+<div class="grid grid-cols-2 gap-3">
+<button class="py-3.5 px-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/20 dark:bg-slate-800/30 hover:bg-white/40 dark:hover:bg-slate-800/50 transition-colors text-sm font-semibold flex items-center justify-center gap-2">
+<span class="material-symbols-rounded text-primary text-xl">book</span>
+                    Add note
+                </button>
+<button class="py-3.5 px-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/20 dark:bg-slate-800/30 hover:bg-white/40 dark:hover:bg-slate-800/50 transition-colors text-sm font-semibold flex items-center justify-center gap-2">
+<span class="material-symbols-rounded text-emerald-400 text-xl">bolt</span>
+                    Quick reflect
+                </button>
+</div>
+</section>
+<section class="p-6 rounded-3xl bg-white/20 dark:bg-slate-900/20 border border-dashed border-slate-300 dark:border-slate-700">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-rounded text-slate-400 text-sm">notifications_active</span>
+<h3 class="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500 dark:text-slate-400">Reminder</h3>
+</div>
+<p class="text-sm italic text-slate-500 dark:text-slate-400">Your future self will thank you for one memory today.</p>
+</section>
+</main>
+<nav class="fixed bottom-0 left-0 right-0 z-50 glass bg-white/60 dark:bg-slate-950/60 border-t border-white/20 dark:border-slate-800/50 px-6 pb-8 pt-3">
+<div class="flex items-center justify-between max-w-md mx-auto">
+<a class="flex flex-col items-center gap-1 text-primary" href="#">
+<span class="material-symbols-rounded filled text-2xl">home</span>
+<span class="text-[10px] font-medium">Home</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-rounded text-2xl">search</span>
+<span class="text-[10px] font-medium">Search</span>
+</a>
+<div class="relative -top-8">
+<button class="w-14 h-14 bg-primary text-slate-950 rounded-2xl shadow-xl shadow-primary/40 flex items-center justify-center transform hover:scale-110 active:scale-95 transition-all">
+<span class="material-symbols-rounded text-3xl font-bold">add</span>
+</button>
+</div>
+<a class="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-rounded text-2xl">auto_awesome</span>
+<span class="text-[10px] font-medium">Vault</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-rounded text-2xl">person</span>
+<span class="text-[10px] font-medium">Profile</span>
+</a>
+</div>
+</nav>
+</body>
+</html>
+

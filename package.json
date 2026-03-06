@@ -9,7 +9,13 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js",
-    "vercel-build": "echo Vercel build override"
+    "admin:local": "node admin-local/server.js",
+    "vercel-build": "echo Vercel build override",
+    "mobile:init": "npx cap init \"Memory Vault\" com.memoryvault.app --web-dir src",
+    "mobile:add": "npx cap add android",
+    "mobile:copy": "npx cap copy",
+    "mobile:open": "npx cap open android",
+    "mobile:sync": "npx cap sync"
   },
   "keywords": [
     "memory",
@@ -19,6 +25,8 @@
   "author": "Blossom",
   "license": "MIT",
   "dependencies": {
+    "@capacitor/app": "^8.0.1",
+    "@capacitor/browser": "^8.0.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -29,6 +37,10 @@
     "pg": "^8.13.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.1.0",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.1.0",
+    "@capacitor/core": "^8.1.0",
     "nodemon": "^3.0.1"
   }
 }

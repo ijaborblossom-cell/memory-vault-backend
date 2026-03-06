@@ -2,6 +2,16 @@
   publish = "src"
 
 [[redirects]]
+  from = "/auth"
+  to = "/auth.html"
+  status = 200
+
+[[redirects]]
+  from = "/auth/:mode"
+  to = "/auth.html"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

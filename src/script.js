@@ -1,25 +1,30 @@
-// Initialize stars
+﻿// Initialize stars
 function createStars() {
   const canvas = document.querySelector('.background-canvas');
-  for (let i = 0; i < 100; i++) {
+  if (!canvas) return;
+  const isLowPower = window.matchMedia('(max-width: 768px), (prefers-reduced-motion: reduce)').matches;
+  const starCount = isLowPower ? 32 : 72;
+  const fragment = document.createDocumentFragment();
+  for (let i = 0; i < starCount; i++) {
     const star = document.createElement('div');
     star.className = 'star';
     star.style.top = Math.random() * 100 + '%';
     star.style.left = Math.random() * 100 + '%';
     star.style.animationDelay = Math.random() * 3 + 's';
-    canvas.appendChild(star);
+    fragment.appendChild(star);
   }
+  canvas.appendChild(fragment);
 }
 createStars();
 
 // Configuration
 const defaultConfig = {
   app_title: "Memory Vault",
-  app_tagline: "Your everyday study memory system",
+  app_tagline: "Your living memory journal",
   hero_title: "Build your memory, one day at a time",
-  hero_subtitle: "Keep class notes, revision insights, and personal reflections in one calm space you can trust.",
+  hero_subtitle: "Keep class notes, hard lessons, and personal reflections in a space that feels like your own journal, not a machine.",
   personal_vault_name: "Personal Life Vault",
-  learning_vault_name: "Knowledge & Education",
+  learning_vault_name: "Academic Vault",
   cultural_vault_name: "Cultural Heritage",
   future_vault_name: "Future Wisdom",
   font_family: "Inter",
@@ -30,6 +35,8 @@ const defaultConfig = {
 let memories = [];
 let currentVault = '';
 let currentPin = '';
+let pinAutoSubmitTimer = null;
+let isPinSubmitting = false;
 let userPin = localStorage.getItem('diary_pin') || null;
 let userName = localStorage.getItem('user_name') || 'Friend';
 let isSubmitting = false;
@@ -41,8 +48,44 @@ let userEmail = localStorage.getItem('user_email') || '';
 let authToken = localStorage.getItem('auth_token') || '';
 let personalUnlockToken = sessionStorage.getItem('personal_unlock_token') || '';
 let personalUnlockExpiresAt = Number(sessionStorage.getItem('personal_unlock_expires_at') || 0);
-let isAdminUser = false;
-let adminApiKey = sessionStorage.getItem('admin_api_key') || '';
+let sessionPingTimer = null;
+let memorySearchTimer = null;
+let trendingCache = { expiresAt: 0, items: [] };
+let trendingRefreshTimer = null;
+
+function normalizeVaultKey(vault) {
+  const value = String(vault || '').trim().toLowerCase();
+  if (!value) return '';
+  const aliases = {
+    academic: 'learning',
+    academics: 'learning',
+    learning: 'learning',
+    education: 'learning',
+    school: 'learning',
+    culture: 'cultural',
+    cultural: 'cultural',
+    future: 'future',
+    personal: 'personal',
+    diary: 'personal',
+    life: 'personal'
+  };
+  return aliases[value] || '';
+}
+const AUTH_ROUTE_MATCH = window.location.pathname.match(/^\/auth(?:\/(signin|signup))?\/?$/i);
+const IS_AUTH_ROUTE = Boolean(AUTH_ROUTE_MATCH);
+
+const SOCIAL_CONFIG = {
+  googleClientId: String(window.MEMORY_VAULT_GOOGLE_CLIENT_ID || '').trim(),
+  facebookAppId: String(window.MEMORY_VAULT_FACEBOOK_APP_ID || '').trim(),
+  microsoftClientId: String(window.MEMORY_VAULT_MICROSOFT_CLIENT_ID || '').trim(),
+  microsoftTenant: String(window.MEMORY_VAULT_MICROSOFT_TENANT || 'common').trim() || 'common'
+};
+
+const SOCIAL_PROVIDER_NAMES = {
+  google: 'Google',
+  facebook: 'Facebook',
+  microsoft: 'Microsoft'
+};
 
 const DAILY_PROMPTS = [
   'What concept did you understand better today than yesterday?',
@@ -78,12 +121,13 @@ if (personalUnlockExpiresAt && Date.now() > personalUnlockExpiresAt) {
 function resolveApiBaseUrl() {
   const sameOriginApi = `${window.location.origin}/api`;
   const onVercelHost = /\.vercel\.app$/i.test(window.location.hostname);
+  const liveFallbackApi = 'https://memory-vault-coral-seven.vercel.app/api';
   const allowExternalApi = window.MEMORY_VAULT_ALLOW_EXTERNAL_API === true;
 
   const configured =
     window.__API_BASE_URL ||
     window.MEMORY_VAULT_API_URL ||
-    sameOriginApi;
+    (window.Capacitor ? liveFallbackApi : (onVercelHost ? sameOriginApi : liveFallbackApi));
 
   const raw = String(configured || '').trim();
   if (!raw) return sameOriginApi;
@@ -122,6 +166,15 @@ async function parseJsonResponse(response, contextLabel = 'request') {
   }
 }
 
+function buildRequestSignal(timeoutMs = 10000) {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeoutMs);
+  return controller.signal;
+}
+
 // ===== BACKEND CONNECTION MANAGEMENT =====
 let serverConnected = false;
 let connectionCheckInterval = null;
@@ -134,6 +187,21 @@ const RECONNECT_DELAY = 3000; // 3 seconds
 // Initialize connection on page load
 window.addEventListener('load', () => {
   initializeBackendConnection();
+  
+  // Handle Deep Linking (for Social Auth redirects)
+  if (window.Capacitor && window.Capacitor.Plugins.App) {
+    window.Capacitor.Plugins.App.addListener('appUrlOpen', (data) => {
+      console.log('App opened with URL:', data.url);
+      const url = new URL(data.url);
+      const params = new URLSearchParams(url.search || url.hash.replace('#', '?'));
+      const mode = params.get('mode');
+      
+      // If we are redirected back with auth data
+      if (url.pathname.includes('auth.html') || params.has('code') || params.has('access_token')) {
+        window.location.assign(`auth.html${url.search}${url.hash}`);
+      }
+    });
+  }
 });
 
 // Initialize backend connection with health checks
@@ -325,17 +393,25 @@ function toggleMobileNavPanel(event) {
   if (event) event.stopPropagation();
   const panel = document.getElementById('mobile-nav-panel');
   const btn = document.getElementById('mobile-menu-toggle');
+  const scrim = document.getElementById('mobile-nav-scrim');
   if (!panel || !btn) return;
   const isOpen = panel.classList.toggle('open');
   btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  btn.textContent = isOpen ? '✕' : '☰';
+  if (scrim) scrim.classList.toggle('open', isOpen);
+  document.body.classList.toggle('mobile-menu-open', isOpen);
 }
 
 function closeMobileNavPanel() {
   const panel = document.getElementById('mobile-nav-panel');
   const btn = document.getElementById('mobile-menu-toggle');
+  const scrim = document.getElementById('mobile-nav-scrim');
   if (!panel || !btn) return;
   panel.classList.remove('open');
   btn.setAttribute('aria-expanded', 'false');
+  btn.textContent = '☰';
+  if (scrim) scrim.classList.remove('open');
+  document.body.classList.remove('mobile-menu-open');
 }
 
 function renderProfessionalFooters() {
@@ -343,13 +419,11 @@ function renderProfessionalFooters() {
   for (const footer of footers) {
     footer.innerHTML = `
       <div class="footer-content">
-        <p class="footer-text">© 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
         <div class="footer-links">
-          <a class="footer-link" href="#" onclick="openAuth('signin'); return false;">Sign In</a>
-          <a class="footer-link" href="#" onclick="openAuth('signup'); return false;">Create Account</a>
-          <a class="footer-link" href="#" onclick="openAIAssistant(); return false;">AI Assistant</a>
-          <a class="footer-link" target="_blank" rel="noopener noreferrer" href="https://mail.google.com/mail/u/0/?fs=1&to=ijaborblossom@gmail.com&tf=cm">Need Guidance? Contact Support</a>
+          <a class="footer-link" target="_blank" rel="noopener noreferrer" href="https://mail.google.com/mail/u/0/?fs=1&to=ijaborblossom@gmail.com&tf=cm">Contact Support</a>
         </div>
+        <p class="footer-text">Memory Vault • &copy; 2026 by <span class="footer-highlight">Ijabor Blossom</span></p>
+        <p class="footer-subtext">Capture your lessons, protect your reflections, and revisit what matters.</p>
       </div>
     `;
   }
@@ -365,16 +439,30 @@ function openResetFromQueryIfNeeded() {
 }
 
 function initializeAppUi() {
+  if (IS_AUTH_ROUTE) {
+    document.body.classList.add('auth-route');
+  }
+
   renderProfessionalFooters();
   applyTheme();
+  updateSocialAuthButtons();
   if (isLoggedIn) {
     userName = localStorage.getItem('user_name') || 'Friend';
     userEmail = localStorage.getItem('user_email') || '';
     // Load memories from backend if user is logged in
     loadMemoriesFromBackend();
-    refreshAdminAccess().then(updateAuthUI).catch(() => {});
+    startSessionHeartbeat();
+    updateAuthUI();
   }
   updateAuthUI();
+  startTrendingRealtimeFeed();
+
+  if (IS_AUTH_ROUTE) {
+    const routeMode = String((AUTH_ROUTE_MATCH && AUTH_ROUTE_MATCH[1]) || '').toLowerCase();
+    const queryMode = String(new URLSearchParams(window.location.search).get('mode') || '').toLowerCase();
+    const mode = routeMode || queryMode;
+    openAuth(mode === 'signup' ? 'signup' : 'signin');
+  }
 }
 
 if (document.readyState === 'loading') {
@@ -386,6 +474,15 @@ if (document.readyState === 'loading') {
 // On mobile, bfcache/page restore can skip initial script timing.
 window.addEventListener('pageshow', () => {
   applyTheme();
+  if (isLoggedIn) {
+    pingUserSession().catch(() => {});
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && isLoggedIn) {
+    pingUserSession().catch(() => {});
+  }
 });
 
 setTimeout(() => {
@@ -528,8 +625,9 @@ function toggleAuthPasswordVisibility() {
   if (!input || !toggleBtn) return;
   const currentlyVisible = input.type === 'text';
   input.type = currentlyVisible ? 'password' : 'text';
-  toggleBtn.textContent = currentlyVisible ? 'Show' : 'Hide';
+  toggleBtn.classList.toggle('is-visible', !currentlyVisible);
   toggleBtn.setAttribute('aria-label', currentlyVisible ? 'Show password' : 'Hide password');
+  toggleBtn.setAttribute('title', currentlyVisible ? 'Show password' : 'Hide password');
 }
 
 // Load memories from backend
@@ -600,7 +698,7 @@ class LocalStorageDataSDK {
     };
     data.push(newRecord);
     this.saveData(data);
-    return { isOk: true, isError: false, data: null, error: null };
+    return { isOk: true, isError: false, data: newRecord, error: null };
   }
 
   async update(record) {
@@ -724,7 +822,7 @@ function initLocalStorage() {
 initAll();
 
 // API Helper Functions
-async function apiCall(endpoint, method = 'GET', body = null) {
+async function apiCall(endpoint, method = 'GET', body = null, extraHeaders = null) {
   const includePersonalToken = authToken && personalUnlockToken &&
     (endpoint.startsWith('/memories') || endpoint.startsWith('/personal'));
 
@@ -733,31 +831,29 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     headers: {
       'Content-Type': 'application/json',
       ...(authToken && { 'Authorization': `Bearer ${authToken}` }),
-      ...(includePersonalToken && { 'x-personal-unlock-token': personalUnlockToken })
+      ...(includePersonalToken && { 'x-personal-unlock-token': personalUnlockToken }),
+      ...(extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : {})
     }
   };
   
   if (body) options.body = JSON.stringify(body);
   
   try {
-    // Check if server is connected before making request
-    if (!serverConnected) {
-      console.warn(`Server not connected. Queuing request to ${endpoint}`);
-      return new Promise((resolve) => {
-        queueRequest(endpoint, method, body, resolve);
-      });
-    }
-    
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
-      signal: AbortSignal.timeout(10000) // 10 second timeout
+      signal: buildRequestSignal(10000) // 10 second timeout
     });
     
     const data = await parseJsonResponse(response, endpoint);
+    if (!serverConnected) {
+      serverConnected = true;
+      retryCount = 0;
+      updateConnectionStatus(true);
+    }
     
     if (!response.ok) {
       console.error(`API Error (${response.status}):`, data.message);
-      if (response.status === 401) {
+      if (shouldForceReauth(response.status, data, endpoint)) {
         // Token expired or invalid
         handleAuthError();
       }
@@ -769,11 +865,25 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     console.error('API Error:', error.message);
     
     // Network error - queue the request
-    if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
+    if (
+      error.message.includes('Failed to fetch') ||
+      error.message.includes('NetworkError') ||
+      error.name === 'TypeError' ||
+      error.name === 'AbortError'
+    ) {
       serverConnected = false;
       updateConnectionStatus(false);
       attemptReconnect();
-      
+
+      const normalizedMethod = String(method || 'GET').toUpperCase();
+      // Do not silently queue write operations. Surface a hard failure immediately.
+      if (normalizedMethod !== 'GET') {
+        return {
+          success: false,
+          message: 'Network issue: could not reach server. Please retry when connected.'
+        };
+      }
+
       return new Promise((resolve) => {
         queueRequest(endpoint, method, body, resolve);
       });
@@ -785,23 +895,88 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 
 // Memory API functions
 async function createMemory(title, content, is_important, vault_type) {
-  if (authToken && serverConnected) {
-    return await apiCall('/memories', 'POST', { title, content, is_important, vault_type });
-  } else {
+  try {
+    const normalizedVaultType = normalizeVaultKey(vault_type) || String(vault_type || '').trim().toLowerCase();
+    const makeLocalRecord = () => {
+      let safeEmail = 'guest';
+      try {
+        safeEmail = localStorage.getItem('user_email') || 'guest';
+      } catch {}
+      return {
+        title,
+        content,
+        is_important: Boolean(is_important),
+        vault_type: normalizedVaultType,
+        timestamp: new Date().toISOString(),
+        __backendId: Date.now().toString() + '_' + Math.random().toString(36).slice(2, 8),
+        user_email: safeEmail
+      };
+    };
+
+    const saveLocally = async () => {
+      const fallbackRecord = makeLocalRecord();
+      try {
+        if (!window.dataSdk || typeof window.dataSdk.create !== 'function') {
+          initLocalStorage();
+        }
+        const localResult = await window.dataSdk.create(fallbackRecord);
+        if (localResult?.success || localResult?.isOk) {
+          return {
+            success: true,
+            isOk: true,
+            data: localResult?.data || fallbackRecord,
+            message: 'Saved locally while backend sync is unavailable.'
+          };
+        }
+      } catch {}
+      return { success: true, isOk: true, data: fallbackRecord, message: 'Saved locally (emergency mode).' };
+    };
+
+    if (authToken) {
+      const result = await apiCall('/memories', 'POST', {
+        title,
+        content,
+        is_important,
+        vault_type: normalizedVaultType
+      });
+      if (result && (result.success || result.isOk)) return result;
+
+      const msg = String(result?.message || '').toLowerCase();
+      const personalLocked = normalizedVaultType === 'personal' && (
+        msg.includes('unlock personal vault') ||
+        msg.includes('personal vault is locked')
+      );
+      if (personalLocked) {
+        return result;
+      }
+
+      // Reliability fallback: if backend save fails, keep user progress by saving locally.
+      return await saveLocally();
+    }
+
     // Fall back to localStorage if not authenticated or backend is offline.
-    return await window.dataSdk.create({ title, content, is_important, vault_type });
+    return await saveLocally();
+  } catch (error) {
+    console.error('createMemory failed unexpectedly:', error);
+    return {
+      success: false,
+      message: 'Could not save memory right now. Please try again.'
+    };
   }
 }
 
-async function refreshAdminAccess() {
-  if (!authToken) {
-    isAdminUser = false;
-    return;
-  }
-
-  const result = await apiCall('/admin/me', 'GET');
-  isAdminUser = Boolean(result.success && result.isAdmin);
+function shouldForceReauth(status, data, endpoint) {
+  if (status !== 401) return false;
+  const path = String(endpoint || '').toLowerCase();
+  // Keep AI screen stable on auth failures so users do not get forced to home mid-chat.
+  if (path.startsWith('/ai/chat')) return false;
+  // Background heartbeat should not force navigation changes while user is working.
+  if (path.startsWith('/session/ping')) return false;
+  const message = String(data?.message || '').toLowerCase();
+  return message.includes('invalid token') || message.includes('no token provided') || message.includes('token expired');
 }
+
+// Memory vault related API calls
 
 async function getMemories() {
   if (authToken) {
@@ -811,20 +986,45 @@ async function getMemories() {
   }
 }
 
+async function pingUserSession() {
+  if (!authToken || !isLoggedIn) return;
+  await apiCall('/session/ping', 'POST', {
+    page: window.location.pathname,
+    visibility: document.visibilityState || 'unknown'
+  });
+}
+
+function stopSessionHeartbeat() {
+  if (sessionPingTimer) {
+    clearInterval(sessionPingTimer);
+    sessionPingTimer = null;
+  }
+}
+
+function startSessionHeartbeat() {
+  stopSessionHeartbeat();
+  if (!authToken || !isLoggedIn) return;
+  pingUserSession().catch(() => {});
+  sessionPingTimer = setInterval(() => {
+    pingUserSession().catch(() => {});
+  }, 60000);
+}
+
 // Navigation
 function openVault(vault) {
-  currentVault = vault;
+  const vaultKey = normalizeVaultKey(vault) || vault;
+  currentVault = vaultKey;
   hideAllPages();
   
-  if (vault === 'personal') {
+  if (vaultKey === 'personal') {
     document.getElementById('personal-page').classList.add('active');
     lockDiaryView();
     if (authToken) {
       restorePersonalUnlockState();
     }
   } else {
-    document.getElementById(`${vault}-page`).classList.add('active');
-    renderVaultMemories(vault);
+    document.getElementById(`${vaultKey}-page`).classList.add('active');
+    renderVaultMemories(vaultKey);
   }
 }
 
@@ -846,15 +1046,16 @@ function hideAllPages() {
 }
 
 function openAddForm(vault) {
-  currentVault = vault;
+  const vaultKey = normalizeVaultKey(vault) || vault;
+  currentVault = vaultKey;
   hideAllPages();
   document.getElementById('form-page').classList.add('active');
   
   const icons = { learning: 'KN', cultural: 'CH', future: 'FW', personal: 'PV' };
-  const titles = { learning: 'Add Knowledge', cultural: 'Add Cultural Memory', future: 'Add Future Wisdom', personal: 'Write Diary Entry' };
+  const titles = { learning: 'Add Academic Memory', cultural: 'Add Cultural Memory', future: 'Add Future Wisdom', personal: 'Write Diary Entry' };
   
-  document.getElementById('form-icon').textContent = icons[vault];
-  document.getElementById('form-title').textContent = titles[vault];
+  document.getElementById('form-icon').textContent = icons[vaultKey];
+  document.getElementById('form-title').textContent = titles[vaultKey];
 }
 
 function openDiaryForm() {
@@ -901,7 +1102,7 @@ function memorySignature(memory) {
   return [
     (memory.title || '').trim(),
     (memory.content || '').trim(),
-    (memory.vault_type || '').trim(),
+    normalizeVaultKey(memory.vault_type) || String(memory.vault_type || '').trim().toLowerCase(),
     (memory.timestamp || '').trim()
   ].join('||');
 }
@@ -936,17 +1137,26 @@ async function syncLocalMemoriesToBackend(email) {
 
 // PIN Functions
 function enterPin(digit) {
+  if (isPinSubmitting) return;
   if (currentPin.length < 6) {
     currentPin += digit;
     updatePinDisplay();
-    
+
     if (currentPin.length === 6) {
-      setTimeout(submitPin, 300);
+      if (pinAutoSubmitTimer) clearTimeout(pinAutoSubmitTimer);
+      pinAutoSubmitTimer = setTimeout(() => {
+        submitPin();
+      }, 300);
     }
   }
 }
 
 function clearPin() {
+  if (pinAutoSubmitTimer) {
+    clearTimeout(pinAutoSubmitTimer);
+    pinAutoSubmitTimer = null;
+  }
+  if (isPinSubmitting) return;
   if (currentPin.length > 0) {
     currentPin = currentPin.slice(0, -1);
     updatePinDisplay();
@@ -996,67 +1206,78 @@ async function restorePersonalUnlockState() {
 }
 
 async function submitPin() {
+  if (pinAutoSubmitTimer) {
+    clearTimeout(pinAutoSubmitTimer);
+    pinAutoSubmitTimer = null;
+  }
+  if (isPinSubmitting) return;
   const msgDiv = document.getElementById('pin-message');
-  
-  if (currentPin.length < 4) {
+  const pinAttempt = currentPin;
+
+  if (pinAttempt.length < 4) {
     msgDiv.innerHTML = '<div class="message error">PIN must be at least 4 digits</div>';
     return;
   }
+  isPinSubmitting = true;
 
-  if (authToken) {
-    const status = await apiCall('/personal/pin/status', 'GET');
-    if (!status.success) {
-      msgDiv.innerHTML = `<div class="message error">${escapeHtml(status.message || 'Could not check PIN status')}</div>`;
-      currentPin = '';
-      updatePinDisplay();
-      return;
-    }
-
-    if (!status.configured) {
-      const setupResult = await apiCall('/personal/pin/setup', 'POST', { pin: currentPin });
-      if (!setupResult.success) {
-        msgDiv.innerHTML = `<div class="message error">${escapeHtml(setupResult.message || 'PIN setup failed')}</div>`;
+  try {
+    if (authToken) {
+      const status = await apiCall('/personal/pin/status', 'GET');
+      if (!status.success) {
+        msgDiv.innerHTML = `<div class="message error">${escapeHtml(status.message || 'Could not check PIN status')}</div>`;
         currentPin = '';
         updatePinDisplay();
         return;
       }
-    }
 
-    const verifyResult = await apiCall('/personal/pin/verify', 'POST', { pin: currentPin });
-    if (!verifyResult.success) {
-      msgDiv.innerHTML = `<div class="message error">${escapeHtml(verifyResult.message || 'Incorrect PIN')}</div>`;
+      if (!status.configured) {
+        const setupResult = await apiCall('/personal/pin/setup', 'POST', { pin: pinAttempt });
+        if (!setupResult.success) {
+          msgDiv.innerHTML = `<div class="message error">${escapeHtml(setupResult.message || 'PIN setup failed')}</div>`;
+          currentPin = '';
+          updatePinDisplay();
+          return;
+        }
+      }
+
+      const verifyResult = await apiCall('/personal/pin/verify', 'POST', { pin: pinAttempt });
+      if (!verifyResult.success) {
+        msgDiv.innerHTML = `<div class="message error">${escapeHtml(verifyResult.message || 'Incorrect PIN')}</div>`;
+        currentPin = '';
+        updatePinDisplay();
+        return;
+      }
+
+      storePersonalUnlockState(verifyResult.unlockToken, verifyResult.expiresAt);
       currentPin = '';
       updatePinDisplay();
+      msgDiv.innerHTML = '<div class="message success">Personal vault unlocked.</div>';
+      unlockDiary();
       return;
     }
 
-    storePersonalUnlockState(verifyResult.unlockToken, verifyResult.expiresAt);
-    currentPin = '';
-    updatePinDisplay();
-    msgDiv.innerHTML = '<div class="message success">Personal vault unlocked.</div>';
-    unlockDiary();
-    return;
-  }
-  
-  if (!userPin) {
-    // First time setup
-    userPin = currentPin;
-    localStorage.setItem('diary_pin', userPin);
-    
-    const name = prompt('What should we call you?') || 'Friend';
-    userName = name;
-    localStorage.setItem('user_name', name);
-    
-    unlockDiary();
-  } else {
-    // Verify PIN
-    if (currentPin === userPin) {
+    if (!userPin) {
+      // First time setup
+      userPin = pinAttempt;
+      localStorage.setItem('diary_pin', userPin);
+
+      const name = prompt('What should we call you?') || 'Friend';
+      userName = name;
+      localStorage.setItem('user_name', name);
+
       unlockDiary();
     } else {
-      msgDiv.innerHTML = '<div class="message error">Incorrect PIN.</div>';
-      currentPin = '';
-      updatePinDisplay();
+      // Verify PIN
+      if (pinAttempt === userPin) {
+        unlockDiary();
+      } else {
+        msgDiv.innerHTML = '<div class="message error">Incorrect PIN.</div>';
+        currentPin = '';
+        updatePinDisplay();
+      }
     }
+  } finally {
+    isPinSubmitting = false;
   }
 }
 
@@ -1114,7 +1335,7 @@ document.getElementById('memory-form').addEventListener('submit', async (e) => {
     return;
   }
   
-  if (!isDataSdkReady) {
+  if (!isDataSdkReady && !authToken) {
     showMessage('System is loading, please try again...', 'error');
     return;
   }
@@ -1134,10 +1355,18 @@ document.getElementById('memory-form').addEventListener('submit', async (e) => {
   const memory = {
     title: document.getElementById('memory-title').value,
     content: document.getElementById('memory-content').value,
-    vault_type: currentVault,
+    vault_type: normalizeVaultKey(currentVault),
     is_important: document.getElementById('memory-important').checked,
     timestamp: new Date().toISOString()
   };
+
+  if (!memory.vault_type) {
+    showMessage('Please choose a vault before saving.', 'error');
+    btn.disabled = false;
+    text.textContent = 'Save Memory';
+    isSubmitting = false;
+    return;
+  }
   
   try {
     const result = await createMemory(memory.title, memory.content, memory.is_important, memory.vault_type);
@@ -1145,6 +1374,7 @@ document.getElementById('memory-form').addEventListener('submit', async (e) => {
     if (result.success || result.isOk) {
       if (result.data) {
         memories.push(result.data);
+        invalidateTrendingCache();
         updateCounts();
         renderCurrentView();
       }
@@ -1176,33 +1406,69 @@ document.getElementById('memory-form').addEventListener('submit', async (e) => {
 
 // Delete Memory
 async function deleteMemory(id) {
-  if (!id) {
-    showMessage('Cannot delete memory: missing id', 'error');
-    return;
-  }
+  try {
+    if (!id) {
+      showMessage('Cannot delete memory: missing id', 'error');
+      return;
+    }
 
-  const memory = memories.find(m => getMemoryId(m) === id);
-  if (!memory) return;
-  const shouldDelete = confirm('Delete this memory?');
-  if (!shouldDelete) return;
-  const result = authToken
-    ? await apiCall(`/memories/${id}`, 'DELETE')
-    : await window.dataSdk.delete({ __backendId: id });
-  if (!(result.success || result.isOk)) {
-    showMessage(`Failed to delete memory: ${result.message || 'Unknown error'}`, 'error');
-    return;
+    const memory = memories.find(m => getMemoryId(m) === id);
+    if (!memory) return;
+    const shouldDelete = confirm('Delete this memory?');
+    if (!shouldDelete) return;
+    let result;
+
+    // Local-only records should be deleted locally immediately.
+    if (memory.__backendId && String(memory.__backendId) === String(id)) {
+      result = await window.dataSdk.delete({ __backendId: id });
+      if (!(result.success || result.isOk)) {
+        showMessage(`Failed to delete memory: ${result.message || 'Unknown error'}`, 'error');
+        return;
+      }
+      memories = memories.filter(m => getMemoryId(m) !== id);
+      invalidateTrendingCache();
+      updateCounts();
+      renderCurrentView();
+      showMessage('Memory deleted successfully', 'success');
+      return;
+    }
+
+    if (authToken) {
+      result = await apiCall(`/memories/${encodeURIComponent(id)}`, 'DELETE');
+      if (!(result.success || result.isOk)) {
+        const localOnlyId = memory.__backendId || '';
+        const notFoundRemotely = String(result.message || '').toLowerCase().includes('not found');
+        const networkFailure = /network|fetch|timeout|abort/i.test(String(result.message || ''));
+        if ((localOnlyId && String(localOnlyId) === String(id)) || notFoundRemotely || networkFailure) {
+          const localDelete = await window.dataSdk.delete({ __backendId: id });
+          if (localDelete.success || localDelete.isOk) {
+            result = { success: true, message: networkFailure ? 'Memory deleted locally (will sync when online).' : 'Memory deleted (local fallback)' };
+          }
+        }
+      }
+    } else {
+      result = await window.dataSdk.delete({ __backendId: id });
+    }
+    if (!(result.success || result.isOk)) {
+      showMessage(`Failed to delete memory: ${result.message || 'Unknown error'}`, 'error');
+      return;
+    }
+    memories = memories.filter(m => getMemoryId(m) !== id);
+    invalidateTrendingCache();
+    updateCounts();
+    renderCurrentView();
+    showMessage('Memory deleted successfully', 'success');
+  } catch (error) {
+    console.error('deleteMemory failed unexpectedly:', error);
+    showMessage('Failed to delete memory. Please try again.', 'error');
   }
-  memories = memories.filter(m => getMemoryId(m) !== id);
-  updateCounts();
-  renderCurrentView();
-  showMessage('Memory deleted successfully', 'success');
 }
 // Render Functions
 function updateCounts() {
   const counts = {
-    learning: memories.filter(m => m.vault_type === 'learning').length,
-    cultural: memories.filter(m => m.vault_type === 'cultural').length,
-    future: memories.filter(m => m.vault_type === 'future').length
+    learning: memories.filter(m => normalizeVaultKey(m.vault_type) === 'learning').length,
+    cultural: memories.filter(m => normalizeVaultKey(m.vault_type) === 'cultural').length,
+    future: memories.filter(m => normalizeVaultKey(m.vault_type) === 'future').length
   };
 
   const totalCountEl = document.getElementById('total-count');
@@ -1229,75 +1495,106 @@ function renderCurrentView() {
 function renderTrendingMemories() {
   const container = document.getElementById('trending-memories');
   if (!container) return;
-  
-  // Load ALL users' memories from all storage keys for trending
-  const allTrendingMemories = [];
-  
-  // Get all localStorage keys
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    // Look for memory vault data keys
-    if (key && key.startsWith('memory_vault_data_')) {
-      try {
-        const data = JSON.parse(localStorage.getItem(key));
-        if (Array.isArray(data)) {
-          // Only include non-personal memories
-          allTrendingMemories.push(...data.filter(m => m.vault_type !== 'personal'));
-        }
-      } catch (error) {
-        console.error('Error loading trending memories:', error);
-      }
+
+  if (Date.now() < trendingCache.expiresAt) {
+    const cached = Array.isArray(trendingCache.items) ? trendingCache.items : [];
+    if (cached.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">TR</div>
+          <p class="empty-text">No trending memories yet</p>
+          <p class="empty-subtext">Important memories from all users will appear here</p>
+        </div>
+      `;
+      return;
     }
-  }
-  
-  // Get important memories and recent ones from ALL users
-  const importantMemories = allTrendingMemories.filter(m => m.is_important);
-  const recentMemories = [...allTrendingMemories]
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .slice(0, 5);
-  
-  // Combine and deduplicate
-  const trendingSet = new Set([...importantMemories, ...recentMemories]);
-  const trending = Array.from(trendingSet).slice(0, 6);
-  
-  if (trending.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">TR</div>
-        <p class="empty-text">No trending memories yet</p>
-        <p class="empty-subtext">Important memories from all users will appear here</p>
+    container.innerHTML = cached.map(m => `
+      <div class="memory-card">
+        <div class="memory-title">
+          ${escapeHtml(m.title)}
+          ${m.is_important ? '<span class="important-flag">Important</span>' : ''}
+        </div>
+        <div class="memory-content">${escapeHtml(m.content)}</div>
+        <div class="memory-meta">
+          <span class="memory-date">${formatDate(m.timestamp)}</span>
+          <span style="color: #66bb6a; font-weight: 600;">${getVaultLabel(m.vault_type)}</span>
+        </div>
       </div>
-    `;
+    `).join('');
     return;
   }
-  
-  container.innerHTML = trending.map(m => `
-    <div class="memory-card">
-      <div class="memory-title">
-        ${escapeHtml(m.title)}
-        ${m.is_important ? '<span class="important-flag">Important</span>' : ''}
-      </div>
-      <div class="memory-content">${escapeHtml(m.content)}</div>
-      <div class="memory-meta">
-        <span class="memory-date">${formatDate(m.timestamp)}</span>
-        <span style="color: #66bb6a; font-weight: 600;">${getVaultLabel(m.vault_type)}</span>
-      </div>
+
+  container.innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">TR</div>
+      <p class="empty-text">Loading global trending memories...</p>
+      <p class="empty-subtext">Important memories from real users appear in realtime</p>
     </div>
-  `).join('');
+  `;
+
+  fetch(`${API_BASE_URL}/memories/trending?limit=6`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    signal: buildRequestSignal(10000)
+  })
+    .then((response) => parseJsonResponse(response, 'trending-memories')
+      .then((data) => ({ ok: response.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok || !data?.success || !Array.isArray(data.data)) return;
+      const trending = data.data;
+      trendingCache = { expiresAt: Date.now() + 8000, items: trending };
+
+      if (trending.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">TR</div>
+            <p class="empty-text">No trending memories yet</p>
+            <p class="empty-subtext">Important memories from all users will appear here</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = trending.map(m => `
+        <div class="memory-card">
+          <div class="memory-title">
+            ${escapeHtml(m.title)}
+            ${m.is_important ? '<span class="important-flag">Important</span>' : ''}
+          </div>
+          <div class="memory-content">${escapeHtml(m.content)}</div>
+          <div class="memory-meta">
+            <span class="memory-date">${formatDate(m.timestamp)}</span>
+            <span style="color: #66bb6a; font-weight: 600;">${getVaultLabel(m.vault_type)}</span>
+          </div>
+        </div>
+      `).join('');
+    })
+    .catch(() => {});
+}
+
+function startTrendingRealtimeFeed() {
+  if (trendingRefreshTimer) return;
+  trendingRefreshTimer = setInterval(() => {
+    trendingCache.expiresAt = 0;
+    renderTrendingMemories();
+  }, 12000);
 }
 
 function getVaultLabel(vaultType) {
+  const key = normalizeVaultKey(vaultType) || String(vaultType || '').toLowerCase();
   const labels = {
-    learning: 'Knowledge',
+    personal: 'Personal',
+    learning: 'Academic',
     cultural: 'Cultural',
     future: 'Future'
   };
-  return labels[vaultType] || vaultType;
+  return labels[key] || vaultType;
 }
 
 function renderVaultMemories(vault) {
-  const container = document.getElementById(`${vault}-memories`);
-  const vaultMemories = memories.filter(m => m.vault_type === vault);
+  const vaultKey = normalizeVaultKey(vault) || vault;
+  const container = document.getElementById(`${vaultKey}-memories`);
+  const vaultMemories = memories.filter(m => normalizeVaultKey(m.vault_type) === vaultKey);
   
   if (vaultMemories.length === 0) {
     container.innerHTML = `
@@ -1321,7 +1618,7 @@ function renderVaultMemories(vault) {
       <div class="memory-content">${escapeHtml(m.content)}</div>
       <div class="memory-meta">
         <span class="memory-date">${formatDate(m.timestamp)}</span>
-        <button class="delete-btn" onclick="deleteMemory('${getMemoryId(m)}')">Delete</button>
+        <button type="button" class="delete-btn" onclick="deleteMemory('${getMemoryId(m)}'); return false;">Delete</button>
       </div>
     </div>
   `).join('');
@@ -1329,7 +1626,7 @@ function renderVaultMemories(vault) {
 
 function renderDiaryEntries() {
   const container = document.getElementById('diary-entries');
-  const entries = memories.filter(m => m.vault_type === 'personal');
+  const entries = memories.filter(m => normalizeVaultKey(m.vault_type) === 'personal');
   
   if (entries.length === 0) {
     container.innerHTML = `
@@ -1353,7 +1650,7 @@ function renderDiaryEntries() {
       <div class="diary-entry-content">${escapeHtml(e.content)}</div>
       <div class="memory-meta">
         <span class="memory-date">${formatDate(e.timestamp)}</span>
-        <button class="delete-btn" onclick="deleteMemory('${getMemoryId(e)}')">Delete</button>
+        <button type="button" class="delete-btn" onclick="deleteMemory('${getMemoryId(e)}'); return false;">Delete</button>
       </div>
     </div>
   `).join('');
@@ -1409,7 +1706,19 @@ function escapeHtml(text) {
 
 // Auth Functions
 function openAuth(mode) {
+  if (!IS_AUTH_ROUTE) {
+    const target = mode === 'signup' ? 'auth.html?mode=signup' : 'auth.html?mode=signin';
+    window.location.assign(target);
+    return;
+  }
+
   authMode = mode;
+  if (mode === 'signin' || mode === 'signup') {
+    const targetPath = `/auth/${mode}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.replaceState({}, '', targetPath);
+    }
+  }
   hideAllPages();
   document.getElementById('auth-page').classList.add('active');
   const identifierLabel = document.getElementById('auth-identifier-label');
@@ -1420,12 +1729,24 @@ function openAuth(mode) {
   const resetPasswordGroup = document.getElementById('auth-reset-password-group');
   const resetConfirmGroup = document.getElementById('auth-reset-confirm-group');
   const passwordFormGroup = document.getElementById('auth-password')?.closest('.form-group');
+  const socialDivider = document.getElementById('auth-social-divider');
+  const socialDividerText = socialDivider?.querySelector('span');
+  const socialGrid = document.getElementById('auth-social-grid');
   const switchText = document.getElementById('auth-switch-text');
   const switchBtnText = document.getElementById('auth-switch-btn-text');
+  const subtitle = document.getElementById('auth-subtitle');
+  const visualTitle = document.getElementById('auth-visual-title');
+  const visualCopy = document.getElementById('auth-visual-copy');
+  const visualCta = document.getElementById('auth-visual-cta');
+  const passwordInput = document.getElementById('auth-password');
+  const resetPasswordInput = document.getElementById('auth-new-password');
+  const resetConfirmInput = document.getElementById('auth-confirm-password');
   
   if (mode === 'signin') {
     document.getElementById('auth-title').textContent = 'Sign In';
-    document.getElementById('auth-subtitle').textContent = 'Access your memory vault';
+    if (subtitle) {
+      subtitle.innerHTML = `Don't have an account? <button type="button" class="auth-subtitle-link" onclick="openAuth('signup')">Sign Up</button>`;
+    }
     document.getElementById('auth-submit-text').textContent = 'Sign In';
     if (switchText) switchText.textContent = "Don't have an account?";
     if (switchBtnText) switchBtnText.textContent = 'Sign Up';
@@ -1435,13 +1756,25 @@ function openAuth(mode) {
     if (resetPasswordGroup) resetPasswordGroup.classList.remove('active');
     if (resetConfirmGroup) resetConfirmGroup.classList.remove('active');
     if (passwordFormGroup) passwordFormGroup.style.display = '';
+    if (socialDivider) socialDivider.style.display = '';
+    if (socialDividerText) socialDividerText.textContent = 'or sign in with';
+    if (socialGrid) socialGrid.style.display = '';
+    updateSocialAuthButtons();
     if (identifierLabel) identifierLabel.textContent = 'Email or Username';
     if (identifierInput) identifierInput.placeholder = 'your@email.com or username';
     if (identifierInput) identifierInput.readOnly = false;
+    if (visualTitle) visualTitle.textContent = 'Welcome Back';
+    if (visualCopy) visualCopy.textContent = 'Enter your personal details to use all Memory Vault features.';
+    if (visualCta) {
+      visualCta.textContent = 'Create Account';
+      visualCta.onclick = function () { openAuth('signup'); };
+    }
   } else {
     if (mode === 'signup') {
       document.getElementById('auth-title').textContent = 'Sign Up';
-      document.getElementById('auth-subtitle').textContent = 'Create your memory vault account';
+      if (subtitle) {
+        subtitle.innerHTML = `Already a member? <button type="button" class="auth-subtitle-link" onclick="openAuth('signin')">Log In</button>`;
+      }
       document.getElementById('auth-submit-text').textContent = 'Create Account';
       if (switchText) switchText.textContent = 'Already have an account?';
       if (switchBtnText) switchBtnText.textContent = 'Sign In';
@@ -1451,12 +1784,22 @@ function openAuth(mode) {
       if (resetPasswordGroup) resetPasswordGroup.classList.remove('active');
       if (resetConfirmGroup) resetConfirmGroup.classList.remove('active');
       if (passwordFormGroup) passwordFormGroup.style.display = '';
+      if (socialDivider) socialDivider.style.display = '';
+      if (socialDividerText) socialDividerText.textContent = 'or sign up with';
+      if (socialGrid) socialGrid.style.display = '';
+      updateSocialAuthButtons();
       if (identifierLabel) identifierLabel.textContent = 'Email';
       if (identifierInput) identifierInput.placeholder = 'your@email.com';
       if (identifierInput) identifierInput.readOnly = false;
+      if (visualTitle) visualTitle.textContent = 'Join Memory Vault';
+      if (visualCopy) visualCopy.textContent = 'Create your account and start storing reflections, notes, and wisdom.';
+      if (visualCta) {
+        visualCta.textContent = 'Sign In';
+        visualCta.onclick = function () { openAuth('signin'); };
+      }
     } else {
       document.getElementById('auth-title').textContent = 'Reset Password';
-      document.getElementById('auth-subtitle').textContent = 'Set your new password and continue';
+      if (subtitle) subtitle.textContent = 'Set your new password and continue';
       document.getElementById('auth-submit-text').textContent = 'Reset Password';
       if (switchText) switchText.textContent = 'Remembered your password?';
       if (switchBtnText) switchBtnText.textContent = 'Sign In';
@@ -1466,6 +1809,8 @@ function openAuth(mode) {
       if (resetPasswordGroup) resetPasswordGroup.classList.add('active');
       if (resetConfirmGroup) resetConfirmGroup.classList.add('active');
       if (passwordFormGroup) passwordFormGroup.style.display = 'none';
+      if (socialDivider) socialDivider.style.display = 'none';
+      if (socialGrid) socialGrid.style.display = 'none';
       if (identifierLabel) identifierLabel.textContent = 'Registered Email';
       if (identifierInput) identifierInput.placeholder = 'your@email.com';
       const urlParams = new URLSearchParams(window.location.search);
@@ -1474,15 +1819,71 @@ function openAuth(mode) {
         identifierInput.value = resetEmail;
         identifierInput.readOnly = true;
       }
+      if (visualTitle) visualTitle.textContent = 'Secure Reset';
+      if (visualCopy) visualCopy.textContent = 'Create a new strong password for your Memory Vault account.';
+      if (visualCta) {
+        visualCta.textContent = 'Sign In';
+        visualCta.onclick = function () { openAuth('signin'); };
+      }
     }
   }
 
-  const passwordInput = document.getElementById('auth-password');
   const passwordToggle = document.getElementById('auth-password-toggle');
+  if (passwordInput) passwordInput.required = mode !== 'reset';
+  if (resetPasswordInput) resetPasswordInput.required = mode === 'reset';
+  if (resetConfirmInput) resetConfirmInput.required = mode === 'reset';
   if (passwordInput) passwordInput.type = 'password';
   if (passwordToggle) {
-    passwordToggle.textContent = 'Show';
+    passwordToggle.classList.remove('is-visible');
     passwordToggle.setAttribute('aria-label', 'Show password');
+    passwordToggle.setAttribute('title', 'Show password');
+  }
+}
+
+function getSocialProviderAvailability(provider) {
+  if (provider === 'google') {
+    if (!SOCIAL_CONFIG.googleClientId) {
+      return { enabled: false, reason: 'Google sign-in is not configured.' };
+    }
+    return { enabled: true, reason: '' };
+  }
+  if (provider === 'facebook') {
+    if (!SOCIAL_CONFIG.facebookAppId) {
+      return { enabled: false, reason: 'Facebook sign-in is not configured.' };
+    }
+    return { enabled: true, reason: '' };
+  }
+  if (provider === 'microsoft') {
+    if (!SOCIAL_CONFIG.microsoftClientId) {
+      return { enabled: false, reason: 'Microsoft sign-in is not configured.' };
+    }
+    return { enabled: true, reason: '' };
+  }
+  return { enabled: false, reason: 'Unsupported provider.' };
+}
+
+function updateSocialAuthButtons() {
+  const socialDivider = document.getElementById('auth-social-divider');
+  const socialGrid = document.getElementById('auth-social-grid');
+  const buttons = document.querySelectorAll('#auth-social-grid .auth-social-btn[data-provider]');
+  let enabledCount = 0;
+  buttons.forEach((btn) => {
+    const provider = String(btn.getAttribute('data-provider') || '').toLowerCase();
+    const label = SOCIAL_PROVIDER_NAMES[provider] || 'Provider';
+    const availability = getSocialProviderAvailability(provider);
+    if (availability.enabled) enabledCount += 1;
+    btn.style.display = availability.enabled ? '' : 'none';
+    btn.disabled = !availability.enabled;
+    btn.classList.toggle('is-disabled', !availability.enabled);
+    btn.setAttribute('aria-disabled', availability.enabled ? 'false' : 'true');
+    btn.title = availability.enabled ? `Continue with ${label}` : availability.reason;
+  });
+
+  // Keep UI professional: don't show dead social section when nothing is configured.
+  if (socialDivider && socialGrid && authMode !== 'reset') {
+    const showSocial = enabledCount > 0;
+    socialDivider.style.display = showSocial ? '' : 'none';
+    socialGrid.style.display = showSocial ? '' : 'none';
   }
 }
 
@@ -1501,12 +1902,19 @@ function closeAuth() {
   const passwordToggle = document.getElementById('auth-password-toggle');
   if (passwordInput) passwordInput.type = 'password';
   if (passwordToggle) {
-    passwordToggle.textContent = 'Show';
+    passwordToggle.classList.remove('is-visible');
     passwordToggle.setAttribute('aria-label', 'Show password');
+    passwordToggle.setAttribute('title', 'Show password');
   }
   sessionStorage.removeItem('reset_token');
   const cleanUrl = `${window.location.origin}${window.location.pathname}`;
   window.history.replaceState({}, '', cleanUrl);
+
+  if (IS_AUTH_ROUTE) {
+    window.location.assign('/');
+    return;
+  }
+
   hideAllPages();
   document.getElementById('main-page').classList.add('active');
   closeMobileNavPanel();
@@ -1531,458 +1939,759 @@ async function startForgotPasswordFlow() {
   }
 }
 
-document.getElementById('auth-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  
-  const identifier = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-password').value;
-  const username = (document.getElementById('auth-username')?.value || '').trim().toLowerCase();
-  const name = document.getElementById('auth-name').value.trim();
-  const newPassword = (document.getElementById('auth-new-password')?.value || '').trim();
-  const confirmPassword = (document.getElementById('auth-confirm-password')?.value || '').trim();
-  const msgDiv = document.getElementById('auth-message');
+async function completeAuthSuccess(data, msgDiv) {
+  localStorage.setItem('auth_token', data.token);
+  localStorage.setItem('user_email', data.user.email);
+  localStorage.setItem('user_name', data.user.name || data.user.username || 'Friend');
+  localStorage.setItem('user_logged_in', 'true');
 
-  if (!identifier) {
-    msgDiv.innerHTML = '<div class="message error">Please enter your email or username.</div>';
-    return;
+  authToken = data.token;
+  userEmail = data.user.email;
+  userName = data.user.name || data.user.username || 'Friend';
+  isLoggedIn = true;
+  sessionStorage.removeItem('reset_token');
+  if (msgDiv) {
+    msgDiv.innerHTML = `<div class="message success">${escapeHtml(data.message || 'Authentication successful.')}</div>`;
   }
-  if (authMode !== 'reset' && password.length < 8) {
-    msgDiv.innerHTML = '<div class="message error">Password must be at least 8 characters.</div>';
-    return;
-  }
-  if (authMode === 'signup') {
-    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier.toLowerCase());
-    if (!emailOk) {
-      msgDiv.innerHTML = '<div class="message error">Please enter a valid email address.</div>';
+
+  startSessionHeartbeat();
+  closeAuth();
+  updateAuthUI();
+
+  // Run data sync in background so signin always lands in the app immediately.
+  (async () => {
+    try {
+      const importedCount = await syncLocalMemoriesToBackend(data.user.email);
+      if (importedCount > 0) {
+        console.log(`Migrated ${importedCount} local memories to backend`);
+      }
+
+      const memoriesResult = await getMemories();
+      if (memoriesResult.success && memoriesResult.data) {
+        memories = memoriesResult.data;
+        renderCurrentView();
+        console.log(`Loaded ${memories.length} memories from backend.`);
+      }
+    } catch (error) {
+      console.warn('Could not load memories from backend:', error);
+    }
+  })();
+}
+
+function ensureFacebookSdkReady() {
+  return new Promise((resolve, reject) => {
+    if (!SOCIAL_CONFIG.facebookAppId) {
+      reject(new Error('Facebook sign-in is not configured.'));
       return;
     }
-    if (!/^[a-z0-9_]{3,20}$/.test(username)) {
-      msgDiv.innerHTML = '<div class="message error">Username must be 3-20 chars with letters, numbers, or underscore.</div>';
+    if (!window.FB || typeof window.FB.init !== 'function') {
+      reject(new Error('Facebook SDK not loaded. Refresh and try again.'));
       return;
     }
-    if (!(/[A-Za-z]/.test(password) && /\d/.test(password))) {
-      msgDiv.innerHTML = '<div class="message error">Password must include both letters and numbers.</div>';
+    window.FB.init({
+      appId: SOCIAL_CONFIG.facebookAppId,
+      cookie: false,
+      xfbml: false,
+      version: 'v19.0'
+    });
+    resolve();
+  });
+}
+
+function openOAuthPopupAndGetResult(url, expectedState) {
+  return new Promise((resolve, reject) => {
+    const popup = window.open(url, 'mv_social_oauth', 'width=540,height=680');
+    if (!popup) {
+      reject(new Error('Popup blocked. Allow popups for this site and try again.'));
       return;
     }
-  }
-  if (authMode === 'reset') {
-    if (newPassword.length < 8) {
-      msgDiv.innerHTML = '<div class="message error">New password must be at least 8 characters.</div>';
-      return;
-    }
-    if (!(/[A-Za-z]/.test(newPassword) && /\d/.test(newPassword))) {
-      msgDiv.innerHTML = '<div class="message error">New password must include letters and numbers.</div>';
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      msgDiv.innerHTML = '<div class="message error">New passwords do not match.</div>';
-      return;
-    }
-  }
-  
-  // Show loading state
-  msgDiv.innerHTML = '<div class="message info">Processing...</div>';
-  
-  try {
-    let response;
-    
-    if (authMode === 'signup') {
-      // Sign up with backend
-      response = await fetch(`${API_BASE_URL}/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: identifier, password, username, name })
-      });
-    } else if (authMode === 'signin') {
-      // Sign in with backend
-      response = await fetch(`${API_BASE_URL}/auth/signin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, password })
-      });
-    } else {
-      const resetToken = sessionStorage.getItem('reset_token') || '';
-      response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: identifier,
-          token: resetToken,
-          newPassword,
-          confirmPassword
-        })
-      });
-    }
-    
-    const data = await parseJsonResponse(response, authMode === 'signup' ? 'signup' : 'signin');
-    
-    if (data.success) {
-      // Store token and user info
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('user_email', data.user.email);
-      localStorage.setItem('user_name', data.user.name || data.user.username || 'Friend');
-      localStorage.setItem('user_logged_in', 'true');
-      
-      // Update state
-      authToken = data.token;
-      userEmail = data.user.email;
-      userName = data.user.name || data.user.username || 'Friend';
-      isLoggedIn = true;
-      sessionStorage.removeItem('reset_token');
-      msgDiv.innerHTML = `<div class="message success">${escapeHtml(data.message || 'Authentication successful.')}</div>`;
-      
-      // Load memories from backend
-      console.log('Loading memories from backend...');
+
+    const timeout = setTimeout(() => {
+      clearInterval(pollTimer);
+      try { popup.close(); } catch {}
+      reject(new Error('Social sign-in timed out. Try again.'));
+    }, 120000);
+
+    const pollTimer = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(pollTimer);
+        clearTimeout(timeout);
+        reject(new Error('Social sign-in was cancelled.'));
+        return;
+      }
+
       try {
-        const importedCount = await syncLocalMemoriesToBackend(data.user.email);
-        if (importedCount > 0) {
-          console.log(`Migrated ${importedCount} local memories to backend`);
-        }
+        if (popup.location.origin !== window.location.origin) return;
+        const hash = String(popup.location.hash || '');
+        const search = String(popup.location.search || '');
+        const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+        const queryParams = new URLSearchParams(search.replace(/^\?/, ''));
+        const state = queryParams.get('state') || hashParams.get('state') || '';
+        const accessToken = queryParams.get('access_token') || hashParams.get('access_token') || '';
+        const authCode = queryParams.get('code') || hashParams.get('code') || '';
+        const error = queryParams.get('error') || hashParams.get('error') || queryParams.get('error_description') || hashParams.get('error_description') || '';
 
-        const memoriesResult = await getMemories();
-        if (memoriesResult.success && memoriesResult.data) {
-          memories = memoriesResult.data;
-          console.log(`Loaded ${memories.length} memories from backend.`);
+        if (!error && !accessToken && !authCode) return;
+
+        clearInterval(pollTimer);
+        clearTimeout(timeout);
+        try { popup.close(); } catch {}
+
+        if (error) {
+          reject(new Error(error));
+          return;
         }
-      } catch (error) {
-        console.warn('Could not load memories from backend:', error);
+        if (expectedState && state !== expectedState) {
+          reject(new Error('OAuth state mismatch. Try again.'));
+          return;
+        }
+        if (!accessToken && !authCode) {
+          reject(new Error('No auth code or access token returned by provider.'));
+          return;
+        }
+        resolve({ accessToken, code: authCode, state });
+      } catch {
+        // Wait until popup returns to this origin.
+      }
+    }, 350);
+  });
+}
+
+function base64UrlEncode(bytes) {
+  let binary = '';
+  bytes.forEach((b) => { binary += String.fromCharCode(b); });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+async function createPkcePair() {
+  if (!window.crypto?.getRandomValues || !window.crypto?.subtle) {
+    throw new Error('Browser does not support secure PKCE flow.');
+  }
+
+  const random = new Uint8Array(48);
+  window.crypto.getRandomValues(random);
+  const verifier = base64UrlEncode(random);
+  const data = new TextEncoder().encode(verifier);
+  const digest = await window.crypto.subtle.digest('SHA-256', data);
+  const challenge = base64UrlEncode(new Uint8Array(digest));
+  return { verifier, challenge };
+}
+
+function getSocialAuthFriendlyError(provider, rawError) {
+  const text = String(rawError || '').trim();
+  const lower = text.toLowerCase();
+
+  if (lower.includes('popup blocked')) return text;
+  if (lower.includes('timed out')) return text;
+  if (lower.includes('cancelled')) return text;
+  if (lower.includes('state mismatch')) return 'Security validation failed. Please try sign-in again.';
+
+  if (provider === 'facebook') {
+    if (lower.includes('invalid') && lower.includes('token')) {
+      return 'Facebook sign-in failed. Verify your app is Live and OAuth redirect domain is configured.';
+    }
+    if (lower.includes('did not provide an email')) {
+      return 'Facebook did not return your email. Use an account with verified email access permission.';
+    }
+  }
+
+  if (provider === 'microsoft') {
+    if (lower.includes('audience mismatch')) {
+      return 'Microsoft sign-in token mismatch. Confirm your Azure app redirect URI and client ID.';
+    }
+    if (lower.includes('unauthorized_client') || lower.includes('aadsts')) {
+      return 'Microsoft sign-in is blocked by Azure app settings. Check redirect URI and SPA/public client settings.';
+    }
+  }
+
+  if (provider === 'google' && lower.includes('invalid credentials')) {
+    return 'Google sign-in failed. Confirm the OAuth client origin includes this Vercel domain.';
+  }
+
+  return text || 'Social sign-in failed. Please try again.';
+}
+
+async function socialAuthSignIn(provider) {
+  if (authMode === 'reset') return;
+  const availability = getSocialProviderAvailability(provider);
+  if (!availability.enabled) {
+    const msgDivDisabled = document.getElementById('auth-message');
+    msgDivDisabled.innerHTML = `<div class="message error">${escapeHtml(availability.reason)}</div>`;
+    return;
+  }
+
+  const socialButtons = document.querySelectorAll('#auth-social-grid .auth-social-btn[data-provider]');
+  socialButtons.forEach((button) => {
+    button.disabled = true;
+  });
+
+  const msgDiv = document.getElementById('auth-message');
+  msgDiv.innerHTML = '<div class="message info">Connecting to provider...</div>';
+
+  try {
+    let payload = { provider };
+
+    if (provider === 'google') {
+      if (!SOCIAL_CONFIG.googleClientId) {
+        throw new Error('Google sign-in is not configured.');
+      }
+      if (!window.google?.accounts?.oauth2?.initTokenClient) {
+        throw new Error('Google SDK not loaded. Refresh and try again.');
+      }
+
+      const token = await new Promise((resolve, reject) => {
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: SOCIAL_CONFIG.googleClientId,
+          scope: 'openid email profile',
+          callback: (resp) => {
+            if (resp?.error) {
+              reject(new Error(resp.error_description || resp.error));
+              return;
+            }
+            resolve(resp.access_token || '');
+          }
+        });
+        client.requestAccessToken({ prompt: 'select_account' });
+      });
+      payload.accessToken = token;
+    } else if (provider === 'facebook') {
+      await ensureFacebookSdkReady();
+      const token = await new Promise((resolve, reject) => {
+        window.FB.login((response) => {
+          if (!response?.authResponse?.accessToken) {
+            reject(new Error('Facebook sign-in was cancelled.'));
+            return;
+          }
+          resolve(response.authResponse.accessToken);
+        }, { scope: 'email,public_profile' });
+      });
+      payload.accessToken = token;
+    } else if (provider === 'microsoft') {
+      if (!SOCIAL_CONFIG.microsoftClientId) {
+        throw new Error('Microsoft sign-in is not configured.');
+      }
+
+      const pkce = await createPkcePair();
+      const state = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const redirectUri = `${window.location.origin}${window.location.pathname}`;
+      const tenant = encodeURIComponent(SOCIAL_CONFIG.microsoftTenant || 'common');
+      const authUrl = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize?client_id=${encodeURIComponent(SOCIAL_CONFIG.microsoftClientId)}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&response_mode=query&scope=${encodeURIComponent('openid profile email offline_access User.Read')}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(pkce.challenge)}&code_challenge_method=S256`;
+      const oauthResult = await openOAuthPopupAndGetResult(authUrl, state);
+      const authCode = String(oauthResult?.code || '').trim();
+      if (!authCode) {
+        throw new Error('No Microsoft authorization code returned.');
+      }
+
+      const tokenBody = new URLSearchParams({
+        client_id: SOCIAL_CONFIG.microsoftClientId,
+        grant_type: 'authorization_code',
+        code: authCode,
+        redirect_uri: redirectUri,
+        code_verifier: pkce.verifier,
+        scope: 'openid profile email offline_access User.Read'
+      });
+
+      const tokenResponse = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: tokenBody.toString()
+      });
+      const tokenData = await tokenResponse.json().catch(() => ({}));
+      if (!tokenResponse.ok) {
+        throw new Error(tokenData?.error_description || tokenData?.error || 'Microsoft token exchange failed.');
+      }
+      payload.accessToken = String(tokenData?.access_token || '').trim();
+      if (!payload.accessToken) {
+        throw new Error('Microsoft did not return an access token.');
+      }
+    } else {
+      throw new Error('Unsupported social provider.');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/auth/oauth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await parseJsonResponse(response, 'oauth-signin');
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Social sign-in failed.');
+    }
+    await completeAuthSuccess(data, msgDiv);
+  } catch (error) {
+    const friendly = getSocialAuthFriendlyError(provider, error?.message || '');
+    msgDiv.innerHTML = `<div class="message error">${escapeHtml(friendly)}</div>`;
+  } finally {
+    updateSocialAuthButtons();
+  }
+}
+
+const authFormEl = document.getElementById('auth-form');
+if (authFormEl) {
+  authFormEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const identifier = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    let username = (document.getElementById('auth-username')?.value || '').trim().toLowerCase();
+    const name = document.getElementById('auth-name').value.trim();
+    const newPassword = (document.getElementById('auth-new-password')?.value || '').trim();
+    const confirmPassword = (document.getElementById('auth-confirm-password')?.value || '').trim();
+    const msgDiv = document.getElementById('auth-message');
+
+    if (!identifier) {
+      msgDiv.innerHTML = '<div class="message error">Please enter your email or username.</div>';
+      return;
+    }
+    if (authMode !== 'reset' && password.length < 8) {
+      msgDiv.innerHTML = '<div class="message error">Password must be at least 8 characters.</div>';
+      return;
+    }
+    if (authMode === 'signup') {
+      const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier.toLowerCase());
+      if (!emailOk) {
+        msgDiv.innerHTML = '<div class="message error">Please enter a valid email address.</div>';
+        return;
+      }
+      if (!username) {
+        const base = identifier.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+        username = (base.length >= 3 ? base : `user_${Date.now().toString().slice(-6)}`).slice(0, 20);
+      }
+      if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+        msgDiv.innerHTML = '<div class="message error">Username must be 3-20 chars with letters, numbers, or underscore.</div>';
+        return;
+      }
+      if (!(/[A-Za-z]/.test(password) && /\d/.test(password))) {
+        msgDiv.innerHTML = '<div class="message error">Password must include both letters and numbers.</div>';
+        return;
+      }
+    }
+    if (authMode === 'reset') {
+      if (newPassword.length < 8) {
+        msgDiv.innerHTML = '<div class="message error">New password must be at least 8 characters.</div>';
+        return;
+      }
+      if (!(/[A-Za-z]/.test(newPassword) && /\d/.test(newPassword))) {
+        msgDiv.innerHTML = '<div class="message error">New password must include letters and numbers.</div>';
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        msgDiv.innerHTML = '<div class="message error">New passwords do not match.</div>';
+        return;
+      }
+    }
+    
+    // Show loading state
+    msgDiv.innerHTML = '<div class="message info">Processing...</div>';
+    
+    try {
+      let response;
+      
+      if (authMode === 'signup') {
+        // Sign up with backend
+        response = await fetch(`${API_BASE_URL}/auth/signup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: identifier, password, username, name })
+        });
+      } else if (authMode === 'signin') {
+        // Sign in with backend
+        response = await fetch(`${API_BASE_URL}/auth/signin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier, password })
+        });
+      } else {
+        const resetToken = sessionStorage.getItem('reset_token') || '';
+        response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: identifier,
+            token: resetToken,
+            newPassword,
+            confirmPassword
+          })
+        });
       }
       
-      setTimeout(() => {
-        closeAuth();
-        refreshAdminAccess().then(updateAuthUI).catch(updateAuthUI);
-      }, 1500);
-    } else {
-      msgDiv.innerHTML = `<div class="message error">${data.message}</div>`;
+      const data = await parseJsonResponse(response, authMode === 'signup' ? 'signup' : 'signin');
+      
+      if (data.success) {
+        await completeAuthSuccess(data, msgDiv);
+      } else {
+        msgDiv.innerHTML = `<div class="message error">${data.message}</div>`;
+      }
+    } catch (error) {
+      msgDiv.innerHTML = `<div class="message error">${error.message || 'Connection error. Is the server running?'}</div>`;
+      console.error('Auth error:', error);
     }
-  } catch (error) {
-    msgDiv.innerHTML = `<div class="message error">${error.message || 'Connection error. Is the server running?'}</div>`;
-    console.error('Auth error:', error);
-  }
-});
+  });
+}
 
 function updateAuthUI() {
+  // Re-sync auth flags from storage so UI stays correct after navigation/restores.
+  isLoggedIn = localStorage.getItem('user_logged_in') === 'true';
+  authToken = localStorage.getItem('auth_token') || '';
   const authButtons = document.getElementById('auth-buttons');
   const userSection = document.getElementById('user-section');
   const mobilePanelAuth = document.getElementById('mobile-panel-auth');
   const mobilePanelUser = document.getElementById('mobile-panel-user');
-  const adminBtn = document.getElementById('admin-nav-btn');
+  const isAuthenticated = isLoggedIn && Boolean(authToken);
   
-  if (isLoggedIn) {
-    authButtons.style.display = 'none';
-    userSection.style.display = 'flex';
-    if (mobilePanelAuth) mobilePanelAuth.style.display = 'none';
-    if (mobilePanelUser) mobilePanelUser.style.display = 'flex';
+  if (isAuthenticated) {
+    if (authButtons) authButtons.style.display = 'none';
+    if (userSection) userSection.style.display = 'flex';
+    if (mobilePanelAuth) mobilePanelAuth.style.setProperty('display', 'none', 'important');
+    if (mobilePanelUser) mobilePanelUser.style.setProperty('display', 'grid', 'important');
     document.getElementById('user-display-name').textContent = `${getGreetingByTime()}, ${userName}`;
     document.getElementById('user-display-email').textContent = userEmail;
     const mobileName = document.getElementById('mobile-panel-user-name');
     const mobileEmail = document.getElementById('mobile-panel-user-email');
     if (mobileName) mobileName.textContent = `${getGreetingByTime()}, ${userName}`;
     if (mobileEmail) mobileEmail.textContent = userEmail;
-    if (adminBtn) adminBtn.style.display = isAdminUser ? 'inline-flex' : 'none';
   } else {
-    authButtons.style.display = 'flex';
-    authButtons.style.gap = '0.5rem';
-    userSection.style.display = 'none';
-    if (mobilePanelAuth) mobilePanelAuth.style.display = 'flex';
-    if (mobilePanelUser) mobilePanelUser.style.display = 'none';
-    if (adminBtn) adminBtn.style.display = 'none';
+    if (authButtons) {
+      authButtons.style.display = 'flex';
+      authButtons.style.gap = '0.5rem';
+    }
+    if (userSection) userSection.style.display = 'none';
+    if (mobilePanelAuth) mobilePanelAuth.style.setProperty('display', 'grid', 'important');
+    if (mobilePanelUser) mobilePanelUser.style.setProperty('display', 'none', 'important');
   }
+
   refreshDailyExperience();
 }
 
-function logout() {
+
+async function logout() {
   const shouldLogout = confirm('Are you sure you want to logout?');
-  
+
   if (shouldLogout) {
     if (authToken) {
-      apiCall('/personal/pin/lock', 'POST').catch(() => {});
+      try {
+        await apiCall('/session/logout', 'POST', { reason: 'user_click' });
+      } catch (error) {
+        console.warn('Could not record logout activity:', error);
+      }
     }
-
-    // Clear local storage
-    localStorage.removeItem('user_logged_in');
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('user_email');
-    localStorage.removeItem('user_name');
-    
-    // Reset state
-    isLoggedIn = false;
-    isAdminUser = false;
-    userEmail = '';
-    userName = 'Friend';
-    authToken = '';
-    storePersonalUnlockState('', 0);
-    adminApiKey = '';
-    sessionStorage.removeItem('admin_api_key');
-    
+    clearAuthSession({ shouldLockPersonalVault: true });
     updateAuthUI();
     hideAllPages();
     document.getElementById('main-page').classList.add('active');
-    
+
     // Show logout message
     const msgDiv = document.createElement('div');
     msgDiv.className = 'message success';
     msgDiv.style.cssText = 'position: fixed; top: 6rem; right: 2rem; z-index: 200; animation: slideIn 0.3s ease;';
     msgDiv.textContent = 'You have logged out successfully.';
     document.body.appendChild(msgDiv);
-    
+
     setTimeout(() => {
       msgDiv.remove();
     }, 3000);
   }
 }
 
+function clearAuthSession({ shouldLockPersonalVault = false } = {}) {
+  if (shouldLockPersonalVault && authToken) {
+    apiCall('/personal/pin/lock', 'POST').catch(() => {});
+  }
+
+  localStorage.removeItem('user_logged_in');
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('user_email');
+  localStorage.removeItem('user_name');
+
+  isLoggedIn = false;
+  userEmail = '';
+  userName = 'Friend';
+  authToken = '';
+  stopSessionHeartbeat();
+  storePersonalUnlockState('', 0);
+  sessionStorage.removeItem('reset_token');
+}
+
 // Handle authentication errors
 function handleAuthError() {
   console.warn('Authentication error - logging out');
-  logout();
+  clearAuthSession({ shouldLockPersonalVault: false });
+  updateAuthUI();
+  hideAllPages();
+  document.getElementById('main-page').classList.add('active');
   showMessage('Session expired. Please sign in again.', 'error');
   openAuth('signin');
 }
 
 
-function closeAdminDashboard() {
-  hideAllPages();
-  document.getElementById('main-page').classList.add('active');
+let aiRequestInFlight = false;
+
+function getAiEls() {
+  return {
+    chat: document.getElementById('ai-chat'),
+    form: document.getElementById('ai-form'),
+    input: document.getElementById('ai-input'),
+    send: document.getElementById('ai-send-btn'),
+    newChat: document.getElementById('ai-new-chat-btn'),
+    mode: document.getElementById('ai-mode')
+  };
 }
 
-function setAdminApiKey() {
-  if (!isAdminUser) {
-    showMessage('Admin dashboard is restricted to the owner account.', 'error');
-    return;
+function formatAiResponseHtml(text) {
+  const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return '';
+  return escapeHtml(normalized).replace(/\n/g, '<br>');
+}
+
+function buildAiMessage(role, bodyHtml, opts = {}) {
+  const isUser = role === 'user';
+  const turn = document.createElement('article');
+  turn.className = `ai-turn ${isUser ? 'ai-turn-user' : 'ai-turn-assistant'}${opts.loading ? ' is-loading' : ''}${opts.error ? ' is-error' : ''}`;
+
+  const who = isUser ? 'You' : 'Vault Companion';
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const avatarText = isUser ? 'Y' : 'VC';
+
+  turn.innerHTML = `
+    <div class="ai-avatar">${avatarText}</div>
+    <div class="ai-bubble">
+      <div class="ai-meta">${who} · ${time}</div>
+      <p class="ai-text">${bodyHtml}</p>
+    </div>
+  `;
+  return turn;
+}
+
+function scrollAiToBottom() {
+  const { chat } = getAiEls();
+  if (!chat) return;
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function resetAiChat() {
+  const { chat, input } = getAiEls();
+  if (!chat) return;
+  chat.innerHTML = `
+    <div class="ai-welcome">
+      <div class="ai-welcome-icon">VC</div>
+      <p class="ai-welcome-title">Hi, I am your Vault Companion.</p>
+      <p class="ai-welcome-subtitle">Ask about your notes, memories, study flow, and next steps.</p>
+    </div>
+  `;
+  if (input) {
+    input.value = '';
+    input.style.height = 'auto';
   }
-  const key = prompt('Enter your admin API key:');
-  if (!key) return;
-  adminApiKey = key.trim();
-  sessionStorage.setItem('admin_api_key', adminApiKey);
-  showMessage('Admin key saved for this session.', 'success');
 }
 
-function clearAdminApiKey() {
-  adminApiKey = '';
-  sessionStorage.removeItem('admin_api_key');
-  showMessage('Admin key cleared.', 'success');
+function setAiComposerDisabled(disabled) {
+  const { input, send, newChat, mode } = getAiEls();
+  if (input) input.disabled = Boolean(disabled);
+  if (send) {
+    send.disabled = Boolean(disabled);
+    send.textContent = disabled ? 'Thinking...' : 'Send';
+  }
+  if (newChat) newChat.disabled = Boolean(disabled);
+  if (mode) mode.disabled = Boolean(disabled);
 }
 
-async function adminFetch(endpoint) {
-  if (!authToken) return { success: false, message: 'Sign in required' };
-  if (!isAdminUser) return { success: false, message: 'Owner-only admin access' };
-  if (!adminApiKey) return { success: false, message: 'Admin API key is required' };
+function autoGrowAiInput() {
+  const { input } = getAiEls();
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, 180)}px`;
+}
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${authToken}`,
-      'x-admin-key': adminApiKey
+function getAiMode() {
+  const { mode } = getAiEls();
+  const raw = String(mode?.value || localStorage.getItem('ai_mode') || 'general').trim().toLowerCase();
+  if (raw === 'coding' || raw === 'memory') return raw;
+  return 'general';
+}
+
+async function sendAiChatMessage(message, mode) {
+  const payload = JSON.stringify({ message: String(message || ''), mode: String(mode || 'general') });
+  const attempts = [];
+
+  const call = async (withAuth) => {
+    const headers = { 'Content-Type': 'application/json' };
+    if (withAuth && authToken) headers.Authorization = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE_URL}/ai/chat`, {
+      method: 'POST',
+      headers,
+      body: payload,
+      signal: AbortSignal.timeout(25000)
+    });
+    const data = await parseJsonResponse(response, 'ai-chat');
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.message || `AI request failed (${response.status})`);
     }
-  });
-  const data = await response.json();
-  return { status: response.status, ...data };
-}
+    if (!String(data?.response || '').trim()) {
+      throw new Error('AI returned an empty response');
+    }
+    return data;
+  };
 
-function renderAdminActivities(activities) {
-  const body = document.getElementById('admin-activity-body');
-  if (!body) return;
-
-  if (!activities.length) {
-    body.innerHTML = '<tr><td colspan="5">No activities recorded yet.</td></tr>';
-    return;
+  try {
+    return await call(true);
+  } catch (error) {
+    attempts.push(String(error?.message || 'unknown error'));
   }
 
-  body.innerHTML = activities.map((item) => `
-    <tr>
-      <td>${escapeHtml(formatDate(item.timestamp))}</td>
-      <td>${escapeHtml(item.action || '-')}</td>
-      <td>${escapeHtml(item.email || '-')}</td>
-      <td>${escapeHtml(item.path || '-')}</td>
-      <td>${escapeHtml(item.ip || '-')}</td>
-    </tr>
-  `).join('');
-}
-
-function renderAdminStats(stats) {
-  const totalEl = document.getElementById('admin-total-activities');
-  const latestEl = document.getElementById('admin-latest-activity');
-  const topActionEl = document.getElementById('admin-top-action');
-
-  if (totalEl) totalEl.textContent = String(stats.totalActivities || 0);
-  if (latestEl) latestEl.textContent = stats.latest ? formatDate(stats.latest) : '-';
-
-  const top = Object.entries(stats.byAction || {}).sort((a, b) => b[1] - a[1])[0];
-  if (topActionEl) topActionEl.textContent = top ? `${top[0]} (${top[1]})` : '-';
-}
-
-async function loadAdminDashboard() {
-  if (!isAdminUser) {
-    showMessage('Admin dashboard is restricted to the owner account.', 'error');
-    closeAdminDashboard();
-    return;
-  }
-  if (!adminApiKey) {
-    setAdminApiKey();
-    if (!adminApiKey) return;
+  // Retry once without auth header to avoid stale-token edge cases.
+  try {
+    return await call(false);
+  } catch (error) {
+    attempts.push(String(error?.message || 'unknown error'));
   }
 
-  const [stats, activities] = await Promise.all([
-    adminFetch('/admin/stats'),
-    adminFetch('/admin/activities?limit=200')
-  ]);
-
-  if (!stats.success || !activities.success) {
-    const message = stats.message || activities.message || 'Failed to load admin dashboard';
-    showMessage(message, 'error');
-    if (stats.status === 401 || activities.status === 401) clearAdminApiKey();
-    return;
-  }
-
-  renderAdminStats(stats);
-  renderAdminActivities(Array.isArray(activities.data) ? activities.data : []);
-}
-
-async function openAdminDashboard() {
-  if (!isLoggedIn) {
-    showMessage('Please sign in first.', 'error');
-    return;
-  }
-
-  await refreshAdminAccess();
-  if (!isAdminUser) {
-    showMessage('Admin dashboard is restricted to the owner account.', 'error');
-    return;
-  }
-
-  window.location.href = 'admin.html';
+  throw new Error(`I could not reach AI right now. ${attempts.join(' | ')}`);
 }
 
 function openAIAssistant() {
-  isLoggedIn = localStorage.getItem('user_logged_in') === 'true';
-  authToken = localStorage.getItem('auth_token') || '';
-  if (!isLoggedIn || !authToken) {
-    showMessage('Please sign in to use the AI Assistant', 'error');
-    showAuth();
-    return;
-  }
   closeMobileNavPanel();
   hideAllPages();
   document.getElementById('ai-page').classList.add('active');
   requestAnimationFrame(() => {
-    const input = document.getElementById('ai-input');
+    const { input } = getAiEls();
     if (input) input.focus();
   });
 }
 
 function closeAI() {
-  document.getElementById('ai-form').reset();
+  const { form } = getAiEls();
+  if (form) form.reset();
   hideAllPages();
   document.getElementById('main-page').classList.add('active');
 }
 
-document.getElementById('ai-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  
-  const input = document.getElementById('ai-input').value.trim();
-  const chatDiv = document.getElementById('ai-chat');
-  const submitBtn = e.target.querySelector('button[type="submit"]');
-  
-  if (!input) {
-    showMessage('Please enter a message', 'error');
-    return;
-  }
-  
-  // Check if logged in
-  if (!isLoggedIn) {
-    showMessage('Please sign in to use the AI Assistant', 'error');
-    document.getElementById('ai-input').value = '';
-    return;
-  }
-  
-  // Add user message
-  const userMsg = document.createElement('div');
-  userMsg.className = 'ai-message user-message';
-  userMsg.innerHTML = `<div class="message-content"><strong>You</strong><p>${escapeHtml(input)}</p></div>`;
-  chatDiv.appendChild(userMsg);
-  
-  // Show loading indicator
-  const loadingMsg = document.createElement('div');
-  loadingMsg.id = 'ai-loading';
-  loadingMsg.className = 'ai-message ai-bot-message';
-  loadingMsg.innerHTML = `<div class="message-content"><strong>Assistant</strong><p>Thinking...</p></div>`;
-  chatDiv.appendChild(loadingMsg);
-  chatDiv.scrollTop = chatDiv.scrollHeight;
-  
-  // Disable input
-  submitBtn.disabled = true;
-  document.getElementById('ai-input').value = '';
-  
-  try {
-    const data = await apiCall('/ai/chat', 'POST', { message: input });
-    if (!data || !data.success) {
-      throw new Error(data?.message || 'AI request failed');
+const aiFormEl = document.getElementById('ai-form');
+const aiInputEl = document.getElementById('ai-input');
+const aiNewChatBtn = document.getElementById('ai-new-chat-btn');
+const aiModeEl = document.getElementById('ai-mode');
+
+if (aiModeEl) {
+  const saved = String(localStorage.getItem('ai_mode') || 'general').toLowerCase();
+  aiModeEl.value = (saved === 'coding' || saved === 'memory') ? saved : 'general';
+  aiModeEl.addEventListener('change', () => {
+    localStorage.setItem('ai_mode', getAiMode());
+  });
+}
+
+if (aiNewChatBtn) {
+  aiNewChatBtn.addEventListener('click', () => {
+    if (aiRequestInFlight) return;
+    resetAiChat();
+  });
+}
+
+if (aiInputEl) {
+  aiInputEl.addEventListener('input', autoGrowAiInput);
+  aiInputEl.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (!aiRequestInFlight && aiFormEl) {
+        if (typeof aiFormEl.requestSubmit === 'function') {
+          aiFormEl.requestSubmit();
+        } else {
+          aiFormEl.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        }
+      }
     }
-    
-    // Check if data contains an error message instead of a response
-    if (data.error) {
-      throw new Error(`API Error: ${data.error}`);
+  });
+}
+
+if (aiFormEl) {
+  aiFormEl.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (aiRequestInFlight) return;
+
+    const { chat, input } = getAiEls();
+    const message = String(input?.value || '').trim();
+    const mode = getAiMode();
+    if (!message || !chat) return;
+
+    const welcome = chat.querySelector('.ai-welcome');
+    if (welcome) welcome.remove();
+
+    const userTurn = buildAiMessage('user', formatAiResponseHtml(message));
+    chat.appendChild(userTurn);
+    input.value = '';
+    autoGrowAiInput();
+
+    const typing = buildAiMessage('assistant', '<span class="ai-typing"><span></span><span></span><span></span></span>', { loading: true });
+    typing.id = 'ai-typing-row';
+    chat.appendChild(typing);
+    scrollAiToBottom();
+
+    aiRequestInFlight = true;
+    setAiComposerDisabled(true);
+
+    try {
+      const data = await sendAiChatMessage(message, mode);
+      if (data.error) throw new Error(String(data.error));
+
+      const replyText = String(data.response || 'I am here to help. Ask me anything.');
+      const typingRow = document.getElementById('ai-typing-row');
+      if (typingRow) typingRow.remove();
+
+      const assistantTurn = buildAiMessage('assistant', formatAiResponseHtml(replyText));
+      chat.appendChild(assistantTurn);
+      scrollAiToBottom();
+
+      if (data.source === 'assistant-action' && data.changed) {
+        await loadMemoriesFromBackend();
+        renderMemories(memories);
+        refreshDailyExperience();
+      }
+    } catch (error) {
+      const typingRow = document.getElementById('ai-typing-row');
+      if (typingRow) typingRow.remove();
+      const errText = `Error: ${escapeHtml(error?.message || 'Could not get a response right now. Try again.')}`;
+      const errTurn = buildAiMessage('assistant', errText, { error: true });
+      chat.appendChild(errTurn);
+      scrollAiToBottom();
+    } finally {
+      aiRequestInFlight = false;
+      setAiComposerDisabled(false);
+      if (input) input.focus();
     }
-    
-    const aiResponse = data.response || 'I\'m here to help! Ask me anything.';
-    
-    // Remove loading message
-    loadingMsg.remove();
-    
-    // Add AI response with animation
-    const aiMsg = document.createElement('div');
-    aiMsg.className = 'ai-message ai-bot-message';
-    aiMsg.innerHTML = `<div class="message-content"><strong>Assistant</strong><p>${escapeHtml(aiResponse)}</p></div>`;
-    chatDiv.appendChild(aiMsg);
-    chatDiv.scrollTop = chatDiv.scrollHeight;
-    
-    console.log('AI message sent successfully.');
-    
-  } catch (error) {
-    console.error('AI error:', error.message);
-    
-    // Remove loading message
-    const loading = document.getElementById('ai-loading');
-    if (loading) loading.remove();
-    
-    // Show error message
-    const errorMsg = document.createElement('div');
-    errorMsg.className = 'ai-message ai-bot-message error-message';
-    errorMsg.innerHTML = `<div class="message-content"><strong>Assistant</strong><p>Error: ${escapeHtml(error.message)}. There is a connection issue. Please try again.</p></div>`;
-    chatDiv.appendChild(errorMsg);
-    chatDiv.scrollTop = chatDiv.scrollHeight;
-  } finally {
-    submitBtn.disabled = false;
-  }
-});
+  });
+}
 
 // ===== NEW FEATURES: SEARCH, STATS, FAVORITES, EXPORT =====
 
 // Filter memories by search query
 function filterMemories(query) {
+  clearTimeout(memorySearchTimer);
+  memorySearchTimer = setTimeout(() => applyMemoryFilter(query), 120);
+}
+
+function applyMemoryFilter(query) {
   const searchResults = document.getElementById('memories-grid');
   if (!searchResults) return;
-  
-  const filtered = memories.filter(m => 
-    m.title.toLowerCase().includes(query.toLowerCase()) ||
-    m.content.toLowerCase().includes(query.toLowerCase()) ||
-    (m.vault_type && m.vault_type.toLowerCase().includes(query.toLowerCase()))
+
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  const filtered = memories.filter(m =>
+    m.title.toLowerCase().includes(normalizedQuery) ||
+    m.content.toLowerCase().includes(normalizedQuery) ||
+    (m.vault_type && m.vault_type.toLowerCase().includes(normalizedQuery))
   );
   
   // Clear and render filtered results
   searchResults.innerHTML = '';
   
-  if (filtered.length === 0 && query.trim()) {
+  if (filtered.length === 0 && normalizedQuery) {
     searchResults.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #999; padding: 2rem;">No memories found matching "${escapeHtml(query)}"</p>`;
   } else if (filtered.length === 0) {
     renderMemories(memories);
   } else {
+    const fragment = document.createDocumentFragment();
     filtered.forEach(memory => {
       const card = createMemoryCard(memory);
-      searchResults.appendChild(card);
+      fragment.appendChild(card);
     });
+    searchResults.appendChild(fragment);
   }
 }
 
@@ -2001,7 +2710,7 @@ function createMemoryCard(memory) {
       </div>
       <div class="memory-actions">
         <button onclick="toggleFavorite('${memoryId}')" class="icon-btn" title="Toggle favorite">Fav</button>
-        <button onclick="deleteMemory('${memoryId}')" class="icon-btn" title="Delete">Del</button>
+        <button type="button" onclick="deleteMemory('${memoryId}'); return false;" class="icon-btn" title="Delete">Del</button>
       </div>
     </div>
   `;
@@ -2027,10 +2736,10 @@ function showStats() {
     today: memories.filter(m => new Date(m.timestamp) >= today).length,
     week: memories.filter(m => new Date(m.timestamp) >= weekStart).length,
     month: memories.filter(m => new Date(m.timestamp) >= monthStart).length,
-    personal: memories.filter(m => m.vault_type === 'Personal').length,
-    learning: memories.filter(m => m.vault_type === 'Learning').length,
-    cultural: memories.filter(m => m.vault_type === 'Cultural').length,
-    future: memories.filter(m => m.vault_type === 'Future Vision').length
+    personal: memories.filter(m => String(m.vault_type || '').toLowerCase() === 'personal').length,
+    learning: memories.filter(m => String(m.vault_type || '').toLowerCase() === 'learning').length,
+    cultural: memories.filter(m => String(m.vault_type || '').toLowerCase() === 'cultural').length,
+    future: memories.filter(m => String(m.vault_type || '').toLowerCase() === 'future').length
   };
   
   // Update modal
@@ -2061,7 +2770,7 @@ function showFavorites() {
       <li class="favorite-item">
         <div class="favorite-title">${escapeHtml(m.title)}</div>
         <div class="favorite-meta">
-          <span>${m.vault_type}</span> • <span>${new Date(m.timestamp).toLocaleDateString()}</span>
+          <span>${m.vault_type}</span> â€¢ <span>${new Date(m.timestamp).toLocaleDateString()}</span>
         </div>
       </li>
     `).join('');
@@ -2285,5 +2994,9 @@ document.addEventListener('click', (e) => {
     e.target.classList.remove('open');
   }
 });
+
+
+
+
 
 

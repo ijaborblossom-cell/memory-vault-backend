@@ -7,6 +7,9 @@
     { "src": "/api/memories(.*)", "dest": "/api/memories/index.js" },
     { "src": "/api/health", "dest": "/api/health.js" },
     { "src": "/api/(.*)", "dest": "/api/index.js" },
+    { "src": "/auth(?:/(signin|signup))?/?", "dest": "/src/auth.html" },
+    { "src": "/admin(?:\\.html)?", "dest": "/src/index.html" },
+    { "src": "/admin/(.*)", "dest": "/src/index.html" },
     { "src": "/$", "dest": "/src/index.html" },
     { "src": "/([^.]*)", "dest": "/src/index.html" },
     { "src": "/(.*)", "dest": "/src/$1" }

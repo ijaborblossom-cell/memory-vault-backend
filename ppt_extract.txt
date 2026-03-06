@@ -1,0 +1,314 @@
+
+--- ppt/slides/slide1.xml ---
+MEMORY VAULT
+A Focused Retention Platform for Students
+Student-Built Platform
+Structured Knowledge Capture
+Designed for Daily Habits
+Defense Presentation • Presenter: Ijabor Blossom • 202
+6
+
+--- ppt/slides/slide2.xml ---
+The Problem
+Understanding the root cause of student memory retention failure
+Students Forget — The Forgetting Curve
+• 
+Students forget information quickly.
+Research on the forgetting curve shows that up to 70% of new material fades within 24 hours if it is not reviewed. Forgetting is exponential unless recall is scheduled.
+Notes Are Scattered Across Tools
+• 
+Another issue is fragmentation. Notes are scattered across documents, chat apps, notebooks, and multiple platforms. This causes context switching, which disrupts focus and follow-up review.
+No Structured Retention Workflow
+•
+ There is also no structured retention workflow. Students capture notes, but there is no guided system that moves from capture to review to retention.
+Consistency Is Difficult
+• 
+consistency is difficult. Without cues and reinforcement, review sessions are skipped. Spaced repetition requires routine, not willpower. The design must reward daily behavior.
+
+--- ppt/slides/slide3.xml ---
+Why This Matters Now
+The modern learning environment is working against retention
+Information Overload
+• 
+Students face information overload. The volume of content exceeds natural cognitive capacity without a structured system
+Short‑Form Content
+• 
+Short-form content has reduced sustained attention tolerance. Deep work is harder to initiate and maintain.
+AI Passive Consumption
+• 
+AI tools provide answers instantly, but getting answers does not guarantee memory formation. Passive consumption reduces consolidation. AI should prompt recall, not replace thinking.
+Declining Retention Skills
+• 
+Active recall and self-testing are used less. Students rely on exposure instead of retrieval practice. Structured intervention is needed.
+
+--- ppt/slides/slide4.xml ---
+Project Goal & Scope
+What Memory Vault is engineered to achieve
+Focused Retention System
+• 
+Memory Vault is engineered as a focused retention system.
+It is purpose-built for retention with no feature bloat. The experience is distraction-free.
+Reduce Setup Friction
+• 
+Setup friction is minimized. A student can start capturing in under 60 seconds using predefined structure.
+Daily Memory Habits
+•
+ 
+The system encourages daily memory habits through streaks, time-based prompts, and a simple habit loop: open, review, 
+capture
+.
+Controlled Observability
+•
+ 
+It also includes controlled observability. Schools can monitor activity and engagement without accessing private content. This supports structured pilots
+ 
+
+--- ppt/slides/slide5.xml ---
+Solution Overview
+A four‑pillar architecture for sustainable, structured learning
+Four Structured Vaults
+• 
+First, four structured vaults: Academic, Personal, Cultural, and Feature. Clear categories reduce decision fatigue and ensure consistent organization.
+Daily Engagement Mechanics
+• 
+Second, daily engagement mechanics. Streak tracking, prompts, trending resurfacing, and favorites bring important memories back into view.
+Context‑Aware AI Guidance
+• 
+Third, context-aware AI guidance. The assistant generates quiz prompts from stored content, summarizes notes, and highlights knowledge gaps.
+Secure Authentication
+•
+ Fourth, secure authentication using JWT and 
+bcrypt
+, with optional per-vault PIN protection.
+ 
+
+--- ppt/slides/slide6.xml ---
+SDG Alignment
+How Memory Vault contributes to the UN Sustainable Development Goals
+This project supports learning equity and outcomes through structured retention.
+SDG 4 — Quality Education
+It improves learning outcomes through structured recall and habit formation.
+SDG 9 — Industry, Innovation & Infrastructure
+through student-led EdTech innovation.
+SDG 10 — Reduced Inequalities
+By reducing access barriers.
+SDG 17 — Partnerships
+through school partnerships and pilot deployment.
+
+--- ppt/slides/slide7.xml ---
+Target Users
+Who benefits most from Memory Vault and why
+Secondary School Students
+•
+ The primary users are secondary school students preparing for exams who need structure without complexity.
+University Students
+•
+ University students benefit from lecture recall and research organization.
+Lifelong Learners
+•
+ Lifelong learners can use it for online courses and career growth.
+Small School Deployments
+•
+ Small school deployments can use the admin dashboard for controlled testing and engagement tracking.
+
+--- ppt/slides/slide8.xml ---
+Product Walkthrough
+The end‑to‑end user journey
+STEP 1
+Signup / Signin
+• 
+secure signup and login using hashed passwords and JWT authentication.
+STEP 2
+Vault Selection
+• 
+vault selection. The user chooses one of four vaults, optionally adding a PIN.
+STEP 3
+Memory CRUD
+• 
+memory CRUD. Users create, edit, delete notes, add tags, mark favorites.
+STEP 4
+Extras & Export
+•
+ extras and export. Trending resurfacing, AI assistant, and JSON , ESV, TEXT format for export.
+
+--- ppt/slides/slide9.xml ---
+Architecture & Data Flow
+The technical stack powering Memory Vault
+Frontend
+• 
+The frontend is built using HTML, CSS, and Vanilla JavaScript with responsive design.
+Backend
+• 
+The backend uses Node.js and Express with REST API routes and validation.
+Persistence
+• 
+The current persistence layer is MongoDB-based which stores data in  BSON format.
+Protected Routes
+• 
+Protected routes use JWT middleware and role-based checks.
+
+--- ppt/slides/slide10.xml ---
+Security & Privacy Decisions
+User data protection by design
+Hashed Passwords
+• 
+Passwords are hashed with 
+bcrypt
+ and salt. No plaintext storage.
+JWT Authentication
+• 
+JWT tokens are signed with expiry enforcement.
+Protected APIs
+• 
+Protected APIs require Bearer authentication.
+ Personal 
+Vault PIN
+• 
+Personal
+ vault can optionally be secured with a hashed PIN.
+
+--- ppt/slides/slide11.xml ---
+Core Feature Highlights
+Capabilities that define the product
+Memory CRUD
+• Create/read/update/delete
+• Tags + search
+• Timestamps
+Favourites & Trending
+•
+ 
+It includes favorites and recency-weighted trending resurfacing.
+Export
+•
+ Users can export data in JSON , CSV and Text format.
+AI Assistant
+• 
+The AI assistant is vault-aware and supports recall through quizzes and summaries
+
+--- ppt/slides/slide12.xml ---
+Admin & Monitoring
+Visibility for controlled deployments
+Owner Dashboard
+• 
+The owner dashboard provides user and session management.
+Activity Logs
+• 
+Activity logs record timestamped actions.
+Metrics
+• 
+Metrics can be filtered by user, vault, and date.
+Deployment Visibility
+ 
+• 
+Deployment visibility includes environment checks and monitoring readiness.
+
+--- ppt/slides/slide13.xml ---
+UI/
+UX  Design
+Designed for real student behaviour
+Low‑Friction UI
+• 
+The UI is low friction with minimal clicks required to capture a memory.
+Theme System
+• 
+The theme system supports dark and light modes.
+Personalised Greeting
+• 
+The theme system supports dark and light modes.
+Streak Reinforcement
+• 
+Streak counters reinforce consistency and habit formation.
+
+--- ppt/slides/slide14.xml ---
+Competitive Comparison
+Positioning against existing tools
+Notion
+• Powerful
+→ Extremely flexible.
+• Too broad
+→ Built for everything.
+• High setup friction
+→ Takes time to design structure.
+Obsidian
+• Deep
+→ Advanced linking and graph view.
+• Technical
+→ Requires configuration.
+• No habit mechanics
+→ No streaks or structured recall.
+Google Keep
+• Fast
+→ Quick note capture.
+• Unstructured
+→ No vault organization.
+• No retention workflow
+→ Just storage.
+Evernote
+• Organi
+z
+ed
+→ Notebook system.
+• Paywalled
+→ Premium restrictions
+.
+• Storage-first
+→ Focused on syncing and saving.
+Memory Vault Advantage
+Retention focus
+Vault structure
+Daily mechanics
+Admin observability
+
+--- ppt/slides/slide15.xml ---
+Why Memory Vault Is Better
+Purpose-built advantages
+Narrow Retention Focus
+• No distraction features
+→ It doesn’t try to be a calendar, task manager, or workspace.
+• Faster onboarding
+→ Students understand it immediately.
+• Higher adoption
+→ Simpler tools are used more consistently.
+Vault Intent
+• Clear categories
+→ Personal, Education, Cultural, Future.
+• Less decision fatigue
+→ No need to design folders.
+• Faster navigation
+→ Users know where everything belongs.
+Daily Mechanics
+• Streak loop
+→ Daily engagement tracking.
+• Trending resurfacing
+→ Important memories come back.
+• Motivation without noise
+→ Encouragement without spam
+.
+Admin Observability
+• Built-in dashboard
+→ No external analytics tools.
+• Non-invasive monitoring
+→ Tracks usage, not private content.
+• School-ready
+→ Designed for institutional deployment.
+
+--- ppt/slides/slide16.xml ---
+Roadmap & Closing
+Strategic priorities for the next phase
+Mobile
+ App
+ Optim
+iz
+ation
+• 
+Mobile-App optimization and PWA development
+Analytics Expansion
+• 
+Advanced analytics, including forgetting curve tracking and spaced repetition scheduling.
+Pilot School Testing
+• 
+Pilot testing in two to three schools with structured 30-day measurement.
+Other tools optimize for productivity or storage.
+Memory Vault optimizes for memory retention
+Memory Vault is a commitment to building better learners. Thank you 
+.
