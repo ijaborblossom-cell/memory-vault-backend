@@ -2344,6 +2344,7 @@ async function completeAuthSuccess(data, msgDiv) {
     "user_name",
     data.user.name || data.user.username || "Friend",
   );
+  localStorage.setItem("user_username", data.user.username || "");
   localStorage.setItem("user_logged_in", "true");
 
   authToken = data.token;
@@ -2955,6 +2956,7 @@ function clearAuthSession({ shouldLockPersonalVault = false } = {}) {
   localStorage.removeItem("auth_token");
   localStorage.removeItem("user_email");
   localStorage.removeItem("user_name");
+  localStorage.removeItem("user_username");
 
   isLoggedIn = false;
   userEmail = "";
