@@ -101,6 +101,7 @@
                 <div class="user-info-box">
                   <div class="user-name" id="mobile-panel-user-name">Welcome!</div>
                   <div class="user-email" id="mobile-panel-user-email"></div>
+                  <button type="button" class="edit-profile-link" onclick="openProfileModal(); closeMobileNavPanel();">Edit Profile</button>
                 </div>
                 <button type="button" class="nav-btn" onclick="logout(); closeMobileNavPanel();">Log Out</button>
               </div>
@@ -135,6 +136,7 @@
               <div class="user-info-box">
                 <div class="user-name" id="user-display-name">Welcome!</div>
                 <div class="user-email" id="user-display-email"></div>
+                <button type="button" class="edit-profile-link" onclick="openProfileModal()">Edit Profile</button>
               </div>
               <button type="button" class="nav-btn" onclick="logout()">Log Out</button>
             </div>
@@ -463,6 +465,30 @@
         <button class="export-btn" onclick="downloadMemories('txt')">Text Format</button>
       </div>
       <p class="export-note">Your data will be saved to your device's Downloads folder.</p>
+    </div>
+  </div>
+  <!-- Profile Modal -->
+  <div id="profile-modal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal('profile-modal')">&times;</button>
+      <h2>Edit Profile</h2>
+      <p class="section-subtitle">Update how you appear in Memory Vault.</p>
+      <form id="profile-form" class="form-card" onsubmit="handleProfileUpdate(event)">
+        <div class="form-group">
+          <label class="form-label" for="profile-name">Display Name</label>
+          <input type="text" id="profile-name" class="form-input" placeholder="Your full name..." required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile-username">Username</label>
+          <input type="text" id="profile-username" class="form-input" placeholder="Unique username..." required>
+          <p class="form-help">3-20 alphanumeric characters or underscores.</p>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('profile-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="profile-save-btn">Save Changes</button>
+        </div>
+        <div id="profile-message"></div>
+      </form>
     </div>
   </div>
   <footer class="footer app-footer" id="app-footer">

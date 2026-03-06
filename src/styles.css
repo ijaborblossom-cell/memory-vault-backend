@@ -46,6 +46,7 @@ body {
   border-radius: 2px;
   animation: sway 4s infinite ease-in-out;
   transform-origin: bottom;
+  will-change: transform;
 }
 
 @keyframes sway {
@@ -66,6 +67,7 @@ body {
   filter: blur(120px);
   opacity: 0.2;
   animation: float 20s infinite ease-in-out;
+  will-change: transform;
 }
 
 .cosmic-glow:nth-child(1) {
@@ -195,6 +197,24 @@ body {
   font-size: 0.75rem;
   color: #9ca3af;
   margin-top: 0.1rem;
+}
+
+.edit-profile-link {
+  display: block;
+  background: none;
+  border: none;
+  color: #66bb6a;
+  font-size: 0.75rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  margin-top: 0.25rem;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.edit-profile-link:hover {
+  opacity: 1;
 }
 
 .nav-actions {
@@ -7592,4 +7612,60 @@ body.light-theme #ai-page .ai-turn-user .ai-bubble {
   #ai-page .ai-submit-btn {
     width: 100%;
   }
+}
+
+/* Trending Enhancements */
+.trending-card {
+  perspective: 1000px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease !important;
+  background: rgba(14, 25, 52, 0.7) !important;
+  border: 1px solid rgba(138, 180, 248, 0.25) !important;
+}
+
+.trending-card:hover {
+  transform: translateY(-5px) scale(1.02);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+  background: rgba(18, 34, 70, 0.85) !important;
+  border-color: rgba(138, 180, 248, 0.5) !important;
+}
+
+.contributor-pill {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 100px;
+  background: rgba(71, 132, 233, 0.2);
+  color: #add1ff;
+  border: 1px solid rgba(71, 132, 233, 0.3);
+  font-weight: 500;
+}
+
+.meta-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.favorite-flag {
+  background: linear-gradient(135deg, #ffca28, #ff8f00);
+  color: #000;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  margin-left: 0.5rem;
+}
+
+.vault-label-personal { color: #f48fb1; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+.vault-label-learning { color: #64b5f6; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+.vault-label-cultural { color: #81c784; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+.vault-label-future   { color: #ba68c8; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+
+/* Social Button Enhancements for Auth */
+.google-btn:hover { background: #1a49a8 !important; border-color: #4285F4 !important; }
+.facebook-btn:hover { background: #104e9c !important; border-color: #1877F2 !important; }
+.microsoft-btn:hover { background: #0060ad !important; border-color: #05a6f0 !important; }
+
+.google-btn svg, .facebook-btn svg, .microsoft-btn svg {
+  filter: drop-shadow(0 0 2px rgba(255,255,255,0.2));
 }
