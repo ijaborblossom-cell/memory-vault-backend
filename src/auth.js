@@ -64,7 +64,7 @@
   }
 
   function getPathForMode(mode) {
-    if (window.Capacitor) {
+    if (window.Capacitor || window.location.protocol === 'file:') {
       return `auth.html?mode=${mode}`;
     }
     return mode === 'signup' ? '/auth/signup' : '/auth/signin';
@@ -100,7 +100,7 @@
       els.socialDivider.textContent = 'or sign in with';
     }
 
-    if (!opts.skipRouteUpdate) {
+    if (!opts.skipRouteUpdate && window.location.protocol !== 'file:') {
       const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       const next = getPathForMode(authMode);
       if (current !== next) {
@@ -112,7 +112,7 @@
 
   function navigateToMode(mode) {
     const target = getPathForMode(mode);
-    if (window.location.pathname === target) {
+    if (window.location.pathname === target || (window.location.protocol === 'file:' && window.location.pathname.endsWith('auth.html'))) {
       setMode(mode, { skipRouteUpdate: true });
       return;
     }
@@ -148,7 +148,11 @@
     localStorage.setItem('user_name', data.user.name || data.user.username || 'Friend');
     localStorage.setItem('user_logged_in', 'true');
     showMsg('Success. Redirecting to app...', 'ok');
-    window.location.assign('/');
+    if (window.Capacitor || window.location.protocol === 'file:') {
+      window.location.assign('index.html');
+    } else {
+      window.location.assign('/');
+    }
   }
 
   async function startForgotPasswordFlow() {

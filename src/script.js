@@ -1911,7 +1911,11 @@ function closeAuth() {
   window.history.replaceState({}, '', cleanUrl);
 
   if (IS_AUTH_ROUTE) {
-    window.location.assign('/');
+    if (window.Capacitor || window.location.protocol === 'file:') {
+      window.location.assign('index.html');
+    } else {
+      window.location.assign('/');
+    }
     return;
   }
 
