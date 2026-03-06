@@ -148,7 +148,7 @@
     localStorage.setItem('user_name', data.user.name || data.user.username || 'Friend');
     localStorage.setItem('user_logged_in', 'true');
     showMsg('Success. Redirecting to app...', 'ok');
-    window.location.assign('index.html');
+    window.location.assign('/');
   }
 
   async function startForgotPasswordFlow() {
